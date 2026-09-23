@@ -50,7 +50,7 @@ class AuthController extends Controller
                     'email' => $request->email,
                     'username' => $autoUsername,
                     'password' => $request->password, // Hashed automatically via model cast
-                    'email_verified_at' => null, // Auto-verify if no OTP step is required
+                    'email_verified_at' => now(), // Auto-verify — no OTP step wired to this flow
                 ]);
             });
             $user = $user->fresh();
