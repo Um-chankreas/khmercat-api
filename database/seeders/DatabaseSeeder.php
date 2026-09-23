@@ -16,8 +16,10 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             RestaurantCategorySeeder::class,
-            RoleSeeder::class,
+            // RoleSeeder is not called here — it references App\Models\Role,
+            // which doesn't exist anywhere in the codebase. Left in
+            // database/seeders/ in case there was a real plan for it, but
+            // running it just breaks `db:seed` for no benefit right now.
         ]);
-
     }
 }
