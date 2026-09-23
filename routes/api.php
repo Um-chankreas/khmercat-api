@@ -13,10 +13,11 @@ use Illuminate\Support\Facades\Route;
 
 // Authentication Endpoints
 Route::prefix('auth')->group(function () {
-    Route::post('register', [AuthController::class, 'register']);
-    Route::post('login', [AuthController::class, 'login']);
-    Route::post('verify-email', [AuthController::class, 'verifyEmail']);
-    Route::post('resend-otp', [AuthController::class, 'resendOtp']);
+    Route::post('register', [AuthController::class, 'register'])->middleware('throttle:5,1');
+    Route::post('login', [AuthController::class, 'login'])->middleware('throttle:5,1');
+    Route::post('verify-email', [AuthController::class, 'verifyEmail'])->middleware('throttle:6,1');
+    // Stricter: resend-otp triggers a real email/SMS send, so abuse here costs money.
+    Route::post('resend-otp', [AuthController::class, 'resendOtp'])->middleware('throttle:3,1');
 });
 
 /*
