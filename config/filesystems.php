@@ -36,6 +36,15 @@ return [
             'serve' => true,
             'throw' => false,
             'report' => false,
+            // Flysystem's default for anything not explicitly 'public' is
+            // owner-only (dirs 0700, files 0600) — fine for PHP-FPM writing
+            // them, but locks out the queue worker (a separate OS user,
+            // deploy) that has to read them back to process video uploads.
+            // Group-writable instead, so both can read/write.
+            'permissions' => [
+                'file' => ['public' => 0664, 'private' => 0660],
+                'dir' => ['public' => 0775, 'private' => 0770],
+            ],
         ],
 
         'public' => [
