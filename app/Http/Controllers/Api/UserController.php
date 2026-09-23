@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\User;
 use App\Models\VideoLike;
 use App\Models\VideoReview;
+use App\Notifications\UserFollowed;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Throwable;
@@ -181,7 +182,12 @@ class UserController extends Controller
             return ApiResponse::error('You cannot follow yourself.', 400);
         }
 
+        $wasAlreadyFollowing = $viewer->isFollowing($target);
         $viewer->follow($target);
+
+        if (! $wasAlreadyFollowing) {
+            $target->notify(new UserFollowed($viewer));
+        }
 
         return ApiResponse::success([
             'followers_count' => $target->followers()->count(),

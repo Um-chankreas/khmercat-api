@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\ProcessRestaurantVideo;
 use App\Jobs\SendPushNotificationJob;
 use App\Models\VideoReview;
+use App\Notifications\VideoLiked;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -125,6 +126,35 @@ class VideoReviewController extends Controller
     }
 
     /**
+     * A single video, in the same shape `feed()` returns each item in —
+     * needed wherever the client only has a video id to start from (e.g.
+     * tapping a notification about a specific video) instead of the full
+     * feed item already in memory. Public, same as the feed.
+     */
+    public function show(VideoReview $video)
+    {
+        if ($video->status !== 'ready') {
+            return ApiResponse::error('Video not found.', 404);
+        }
+
+        $video->load([
+            'user:id,name,username,profile_picture',
+            'restaurant:id,name,profile_picture',
+            'hashtags:id,name',
+        ])->loadCount(['likes', 'comments']);
+
+        $viewerId = $this->currentViewerId();
+        if ($viewerId) {
+            $video->loadExists([
+                'likes as liked_by_me' => fn ($q) => $q->where('user_id', $viewerId),
+                'saves as saved_by_me' => fn ($q) => $q->where('user_id', $viewerId),
+            ]);
+        }
+
+        return ApiResponse::success($video, 'Video retrieved successfully.');
+    }
+
+    /**
      * A normal user uploads a review video for a restaurant they select.
      */
     public function uploadReview(Request $request)
@@ -193,6 +223,7 @@ class VideoReviewController extends Controller
                 auth()->user()->name.' liked your video.',
                 ['type' => 'video_liked', 'video_id' => (string) $video->id]
             );
+            $video->user->notify(new VideoLiked($video, auth()->user()));
         }
 
         return ApiResponse::success([

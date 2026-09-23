@@ -11,6 +11,7 @@ class VideoComment extends Model
     protected $fillable = [
         'video_review_id',
         'user_id',
+        'parent_id',
         'body',
     ];
 
@@ -27,5 +28,15 @@ class VideoComment extends Model
     public function likes(): HasMany
     {
         return $this->hasMany(CommentLike::class);
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(VideoComment::class, 'parent_id');
+    }
+
+    public function replies(): HasMany
+    {
+        return $this->hasMany(VideoComment::class, 'parent_id');
     }
 }

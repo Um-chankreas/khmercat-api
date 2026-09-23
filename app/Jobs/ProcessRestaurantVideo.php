@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\VideoReview;
+use App\Notifications\RestaurantPostedVideo;
 use FFMpeg\Coordinate\TimeCode;
 use FFMpeg\FFMpeg;
 use FFMpeg\Format\Video\X264;
@@ -157,26 +158,41 @@ class ProcessRestaurantVideo implements ShouldQueue
     }
 
     /**
-     * Notifies the uploader's followers once their review video is actually
-     * watchable — not at upload time, so nobody gets pinged about a video
-     * that's still processing or fails compression. Restaurant posts don't
-     * trigger this; only `TYPE_REVIEW` uploads do.
+     * Notifies the relevant followers once the video is actually watchable —
+     * not at upload time, so nobody gets pinged about a video that's still
+     * processing or fails compression. Who gets notified depends on type:
+     * a review notifies the *uploader's* followers, a restaurant post
+     * notifies the *restaurant's* followers.
      */
     private function notifyFollowersOfNewReview(): void
     {
-        if ($this->videoReview->type !== VideoReview::TYPE_REVIEW) {
+        if ($this->videoReview->type === VideoReview::TYPE_REVIEW) {
+            $uploader = $this->videoReview->user;
+
+            foreach ($uploader->followerUsers() as $follower) {
+                SendPushNotificationJob::dispatch(
+                    $follower,
+                    'New review',
+                    "{$uploader->name} posted a new review.",
+                    ['type' => 'new_review_video', 'video_id' => (string) $this->videoReview->id]
+                );
+            }
+
             return;
         }
 
-        $uploader = $this->videoReview->user;
+        if ($this->videoReview->type === VideoReview::TYPE_RESTAURANT_POST) {
+            $restaurant = $this->videoReview->restaurant;
 
-        foreach ($uploader->followerUsers() as $follower) {
-            SendPushNotificationJob::dispatch(
-                $follower,
-                'New review',
-                "{$uploader->name} posted a new review.",
-                ['type' => 'new_review_video', 'video_id' => (string) $this->videoReview->id]
-            );
+            foreach ($restaurant->followerUsers() as $follower) {
+                SendPushNotificationJob::dispatch(
+                    $follower,
+                    'New video',
+                    "{$restaurant->name} posted a new video.",
+                    ['type' => 'restaurant_video', 'video_id' => (string) $this->videoReview->id]
+                );
+                $follower->notify(new RestaurantPostedVideo($restaurant, $this->videoReview));
+            }
         }
     }
 

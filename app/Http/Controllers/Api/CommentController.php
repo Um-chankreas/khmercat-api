@@ -10,6 +10,8 @@ use App\Http\Controllers\Controller;
 use App\Models\CommentLike;
 use App\Models\VideoComment;
 use App\Models\VideoReview;
+use App\Notifications\CommentReplied;
+use App\Notifications\VideoCommented;
 use Illuminate\Http\Request;
 use Throwable;
 
@@ -52,10 +54,23 @@ class CommentController extends Controller
     {
         $request->validate([
             'body' => 'required|string|max:1000',
+            'parent_id' => 'nullable|integer|exists:video_comments,id',
         ]);
+
+        $parent = null;
+        if ($request->filled('parent_id')) {
+            $parent = VideoComment::where('id', $request->integer('parent_id'))
+                ->where('video_review_id', $video->id)
+                ->first();
+
+            if (! $parent) {
+                return ApiResponse::error('The comment being replied to does not belong to this video.', 422);
+            }
+        }
 
         $comment = $video->comments()->create([
             'user_id' => auth()->id(),
+            'parent_id' => $parent?->id,
             'body' => $request->body,
         ]);
         $comment->load('user:id,name,username,profile_picture');
@@ -63,6 +78,12 @@ class CommentController extends Controller
         $comment->setAttribute('is_liked', false);
 
         broadcast(new CommentCreated($comment));
+
+        if ($parent && $parent->user_id !== auth()->id()) {
+            $parent->user->notify(new CommentReplied($comment, $parent));
+        } elseif (! $parent && $video->user_id !== auth()->id()) {
+            $video->user->notify(new VideoCommented($comment));
+        }
 
         return ApiResponse::success($comment, 'Comment posted successfully.', 201);
     }

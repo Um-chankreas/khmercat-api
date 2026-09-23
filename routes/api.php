@@ -3,6 +3,7 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\DeviceTokenController;
+use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantController;
@@ -29,6 +30,7 @@ Route::prefix('auth')->group(function () {
 Route::get('videos/stream/{filename}', [VideoReviewController::class, 'streamVideo'])->name('videos.stream');
 Route::get('videos/feed', [VideoReviewController::class, 'feed']);
 Route::get('videos/{video}/comments', [CommentController::class, 'index'])->whereNumber('video');
+Route::get('videos/{video}', [VideoReviewController::class, 'show'])->whereNumber('video');
 Route::get('search', [SearchController::class, 'index']);
 Route::get('users/{username}', [UserController::class, 'show']);
 Route::get('users/{username}/videos', [UserController::class, 'videos']);
@@ -42,6 +44,13 @@ Route::get('restaurants/{id}', [RestaurantController::class, 'show'])->whereNumb
 */
 
 Route::middleware('auth:api')->group(function () {
+
+    // Private-channel auth for Reverb (websockets), e.g. the per-user
+    // notifications channel (`App.Models.User.{id}`, see channels.php).
+    // The framework auto-registers `/broadcasting/auth` too, but only under
+    // `web` (session) middleware — useless for this JWT-only API, so this
+    // reuses Laravel's own controller under `auth:api` instead.
+    Route::post('broadcasting/auth', [\Illuminate\Broadcasting\BroadcastController::class, 'authenticate']);
 
     // Authenticated User Profile & Session
     Route::prefix('auth')->group(function () {
@@ -92,6 +101,15 @@ Route::middleware('auth:api')->group(function () {
     // Push notification device tokens (Firebase Cloud Messaging).
     Route::post('device-tokens', [DeviceTokenController::class, 'store']);
     Route::delete('device-tokens', [DeviceTokenController::class, 'destroy']);
+
+    // In-app notifications list (follows, likes, comments, replies, restaurant posts).
+    Route::prefix('notifications')->group(function () {
+        Route::get('/', [NotificationController::class, 'index']);
+        Route::post('read-all', [NotificationController::class, 'markAllRead']);
+        Route::post('{id}/read', [NotificationController::class, 'markRead']);
+        Route::delete('/', [NotificationController::class, 'destroyAll']);
+        Route::delete('{id}', [NotificationController::class, 'destroy']);
+    });
 
     // Own avatar / cover photo upload, and the edit-profile form.
     Route::prefix('profile')->group(function () {

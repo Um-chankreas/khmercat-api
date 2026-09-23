@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Collection;
 
 class Restaurant extends Model
 {
@@ -89,5 +90,14 @@ class Restaurant extends Model
     public function followers(): MorphMany
     {
         return $this->morphMany(Follow::class, 'followable');
+    }
+
+    /**
+     * The actual User models following this restaurant (unwraps the Follow
+     * pivot rows `followers()` returns) — for fanning out notifications.
+     */
+    public function followerUsers(): Collection
+    {
+        return $this->followers()->with('follower')->get()->pluck('follower')->filter()->values();
     }
 }
