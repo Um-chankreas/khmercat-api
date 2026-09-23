@@ -100,6 +100,14 @@ class VideoReviewController extends Controller
             ]);
         }
 
+        // Fetched once, not per-video: every video always has a restaurant
+        // (both upload paths require one), so this is the actual follow
+        // state behind each video's "Follow" chip — not the client-only
+        // guess the app previously had to fall back to.
+        $followedRestaurantIds = $viewerId
+            ? auth('api')->user()->followingRestaurantIds()
+            : [];
+
         // Keyset pagination: the mobile app passes the last video id it
         // received as `cursor` to fetch the next older batch.
         if ($request->filled('cursor')) {
@@ -113,6 +121,13 @@ class VideoReviewController extends Controller
         $videos = $query->orderByDesc('id')->limit($limit + 1)->get();
         $hasMore = $videos->count() > $limit;
         $videos = $videos->take($limit);
+
+        $videos->each(function ($video) use ($followedRestaurantIds) {
+            $video->setAttribute(
+                'is_following_restaurant',
+                $video->restaurant_id && in_array($video->restaurant_id, $followedRestaurantIds)
+            );
+        });
 
         $responseData = [
             'contents' => $videos->values(),
@@ -149,6 +164,10 @@ class VideoReviewController extends Controller
                 'likes as liked_by_me' => fn ($q) => $q->where('user_id', $viewerId),
                 'saves as saved_by_me' => fn ($q) => $q->where('user_id', $viewerId),
             ]);
+            $video->setAttribute(
+                'is_following_restaurant',
+                $video->restaurant && auth('api')->user()->isFollowing($video->restaurant)
+            );
         }
 
         return ApiResponse::success($video, 'Video retrieved successfully.');
