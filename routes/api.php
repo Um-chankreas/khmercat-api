@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantController;
 use App\Http\Controllers\Api\RestaurantMenuController;
+use App\Http\Controllers\Api\RestaurantVideoController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VideoReviewController;
@@ -113,6 +114,9 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
         Route::post('cover', [RestaurantController::class, 'uploadCover']);
         Route::post('menu', [RestaurantMenuController::class, 'store']);
         Route::delete('menu/{imageId}', [RestaurantMenuController::class, 'destroy'])->whereNumber('imageId');
+        // The restaurant's own posts: delete one, and the Delete tab's list.
+        Route::get('videos/deleted', [RestaurantVideoController::class, 'deleted']);
+        Route::delete('videos/{videoId}', [RestaurantVideoController::class, 'destroy'])->whereNumber('videoId');
         Route::post('follow', [RestaurantController::class, 'follow']);
         Route::delete('follow', [RestaurantController::class, 'unfollow']);
     });
