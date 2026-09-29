@@ -35,6 +35,7 @@ class CommentController extends Controller
 
         $comments = $video->comments()
             ->whereNull('parent_id')
+            ->whereHas('user', fn ($u) => $u->active())
             ->with(self::USER_FIELDS)
             ->withCount(['likes', 'replies'])
             ->when($viewerId, fn ($q) => $this->withLikedByViewer($q, $viewerId))
@@ -192,6 +193,8 @@ class CommentController extends Controller
     private function replyQuery($query, ?int $viewerId)
     {
         return $query
+            // Deactivated accounts' replies stay hidden until they're back.
+            ->whereHas('user', fn ($u) => $u->active())
             ->with(self::USER_FIELDS)
             ->withCount('likes')
             ->when($viewerId, fn ($q) => $this->withLikedByViewer($q, $viewerId))

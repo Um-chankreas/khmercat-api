@@ -160,6 +160,8 @@ class SearchController extends Controller
         $query = VideoReview::where('status', 'ready')
             // Not from restaurants that are unpublished or deleted.
             ->whereHas('restaurant', fn (Builder $r) => $r->published())
+            // Not from deactivated or deleted accounts.
+            ->whereHas('user', fn (Builder $u) => $u->active())
             ->when($q !== '', fn (Builder $query) => $query->where(function (Builder $w) use ($q, $tag) {
                 $w->where('caption', 'like', '%'.$q.'%')
                     ->orWhereHas('hashtags', fn (Builder $h) => $h->where('name', $tag))
@@ -210,7 +212,7 @@ class SearchController extends Controller
         }
 
         $handle = ltrim($q, '@');
-        $query = User::where(fn (Builder $w) => $w
+        $query = User::active()->where(fn (Builder $w) => $w
             ->where('name', 'like', '%'.$q.'%')
             ->orWhere('username', 'like', '%'.$handle.'%'));
 

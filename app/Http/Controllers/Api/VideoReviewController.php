@@ -50,7 +50,9 @@ class VideoReviewController extends Controller
             ->withCount(['likes', 'comments'])
             ->where('status', 'ready')
             // Hide videos of unpublished or deleted restaurants.
-            ->whereHas('restaurant', fn ($r) => $r->published());
+            ->whereHas('restaurant', fn ($r) => $r->published())
+            // ...and of deactivated or deleted accounts.
+            ->whereHas('user', fn ($u) => $u->active());
 
         if ($request->filled('restaurant_id')) {
             $query->where('restaurant_id', $request->integer('restaurant_id'));
@@ -156,7 +158,7 @@ class VideoReviewController extends Controller
      */
     public function show(VideoReview $video)
     {
-        if ($video->status !== 'ready') {
+        if ($video->status !== 'ready' || ! $video->user()->active()->exists()) {
             return ApiResponse::error('Video not found.', 404);
         }
 

@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\Api\AccountController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CommentController;
 use App\Http\Controllers\Api\DeviceTokenController;
@@ -11,6 +12,7 @@ use App\Http\Controllers\Api\RestaurantMenuController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VideoReviewController;
+use App\Http\Middleware\EnsureAccountActive;
 use Illuminate\Broadcasting\BroadcastController;
 use Illuminate\Support\Facades\Route;
 
@@ -48,7 +50,7 @@ Route::get('restaurants/{id}/menu', [RestaurantMenuController::class, 'index'])-
 |--------------------------------------------------------------------------
 */
 
-Route::middleware('auth:api')->group(function () {
+Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
 
     // Private-channel auth for Reverb (websockets), e.g. the per-user
     // notifications channel (`App.Models.User.{id}`, see channels.php).
@@ -62,6 +64,13 @@ Route::middleware('auth:api')->group(function () {
         Route::get('get-user-account', [AuthController::class, 'getUserAccount']);
         Route::post('refresh-token', [AuthController::class, 'refreshToken']);
         Route::post('logout', [AuthController::class, 'logout']);
+    });
+
+    // Own account: deactivate (reversible) or delete (permanent). Throttled —
+    // both check the password.
+    Route::prefix('account')->middleware('throttle:10,1')->group(function () {
+        Route::post('deactivate', [AccountController::class, 'deactivate']);
+        Route::delete('/', [AccountController::class, 'destroy']);
     });
 
     // Restaurant Management & Team Invitations

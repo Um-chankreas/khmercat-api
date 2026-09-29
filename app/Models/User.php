@@ -45,6 +45,7 @@ class User extends Authenticatable implements JWTSubject
         'email_otp_expires_at',
         'email_verified_at',
         'active_restaurant_id',
+        'deactivated_at',
     ];
 
     /**
@@ -66,6 +67,7 @@ class User extends Authenticatable implements JWTSubject
     {
         return [
             'email_verified_at' => 'datetime',
+            'deactivated_at' => 'datetime',
             'password' => 'hashed',
             'is_verified' => 'boolean',
         ];
@@ -77,6 +79,20 @@ class User extends Authenticatable implements JWTSubject
     public function videoReviews(): HasMany
     {
         return $this->hasMany(VideoReview::class);
+    }
+
+    /**
+     * Only users who haven't deactivated their account — the ones whose
+     * profile, videos and comments the public can see.
+     */
+    public function scopeActive($query)
+    {
+        return $query->whereNull('deactivated_at');
+    }
+
+    public function isDeactivated(): bool
+    {
+        return $this->deactivated_at !== null;
     }
 
     public function getJWTIdentifier()

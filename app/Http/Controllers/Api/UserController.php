@@ -20,7 +20,7 @@ class UserController extends Controller
      */
     public function show(string $username)
     {
-        $user = User::where('username', $username)
+        $user = User::active()->where('username', $username)
             ->select([
                 'id', 'name', 'username', 'profile_picture', 'profile_thumbnail', 'cover_picture', 'cover_thumbnail',
                 'bio', 'is_verified', 'facebook_url', 'tiktok_url', 'telegram_username', 'created_at',
@@ -66,7 +66,7 @@ class UserController extends Controller
      */
     public function videos(string $username, Request $request)
     {
-        $target = User::where('username', $username)->first();
+        $target = User::active()->where('username', $username)->first();
 
         if (! $target) {
             return ApiResponse::error('User not found.', 404);
@@ -112,7 +112,7 @@ class UserController extends Controller
 
     private function privateVideoList(string $username, Request $request, string $relation, string $message)
     {
-        $target = User::where('username', $username)->first();
+        $target = User::active()->where('username', $username)->first();
 
         if (! $target) {
             return ApiResponse::error('User not found.', 404);
@@ -187,7 +187,7 @@ class UserController extends Controller
 
     public function follow(string $username)
     {
-        $target = User::where('username', $username)->first();
+        $target = User::active()->where('username', $username)->first();
 
         if (! $target) {
             return ApiResponse::error('User not found.', 404);
@@ -213,7 +213,7 @@ class UserController extends Controller
 
     public function unfollow(string $username)
     {
-        $target = User::where('username', $username)->first();
+        $target = User::active()->where('username', $username)->first();
 
         if (! $target) {
             return ApiResponse::error('User not found.', 404);

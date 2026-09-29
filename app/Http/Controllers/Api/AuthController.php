@@ -208,11 +208,18 @@ class AuthController extends Controller
                 );
             }
 
+            // Logging in is how a deactivated account comes back.
+            $reactivated = $user->isDeactivated();
+            if ($reactivated) {
+                $user->forceFill(['deactivated_at' => null])->save();
+            }
+
             // 5. Success response (200 OK) with token and full user model
             return ApiResponse::success([
                 'token' => $token,
                 'user' => $user,
-            ], 'Login successful', 200);
+                'reactivated' => $reactivated,
+            ], $reactivated ? 'Welcome back! Your account is active again.' : 'Login successful', 200);
 
         } catch (Throwable $e) {
             return ApiResponse::error('Login failed due to a server error', 500, $e->getMessage());
