@@ -14,6 +14,8 @@ class CommentDeleted implements ShouldBroadcastNow
     public function __construct(
         public int $videoReviewId,
         public int $commentId,
+        public ?int $parentId = null,
+        public int $removedCount = 1,
     ) {}
 
     public function broadcastOn(): array
@@ -28,6 +30,12 @@ class CommentDeleted implements ShouldBroadcastNow
 
     public function broadcastWith(): array
     {
-        return ['comment_id' => $this->commentId];
+        return [
+            'comment_id' => $this->commentId,
+            // Set when a reply was deleted, so clients can update its thread.
+            'parent_id' => $this->parentId,
+            // The comment plus any replies deleted along with it.
+            'removed_count' => $this->removedCount,
+        ];
     }
 }

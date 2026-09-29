@@ -17,20 +17,34 @@ use Throwable;
 
 class CommentController extends Controller
 {
+    /** Replies embedded under each top-level comment in the list response. */
+    private const REPLY_PREVIEW = 3;
+
+    private const USER_FIELDS = 'user:id,name,username,profile_picture,is_verified';
+
     /**
-     * List comments for a video. Guest-accessible.
+     * Top-level comments for a video, newest first, each with its first few
+     * replies (oldest first) and `replies_count`. Guest-accessible.
+     *
+     * Every comment and reply carries `is_creator` (written by the video's
+     * uploader). `meta.total_all` counts replies too, for the header badge.
      */
     public function index(VideoReview $video, Request $request)
     {
         $viewerId = $this->currentViewerId();
 
         $comments = $video->comments()
-            ->with('user:id,name,username,profile_picture')
-            ->withCount('likes')
-            ->when($viewerId, fn ($q) => $q->withExists([
-                'likes as is_liked' => fn ($q) => $q->where('user_id', $viewerId),
-            ]))
+            ->whereNull('parent_id')
+            ->with(self::USER_FIELDS)
+            ->withCount(['likes', 'replies'])
+            ->when($viewerId, fn ($q) => $this->withLikedByViewer($q, $viewerId))
+            ->with(['replies' => fn ($q) => $this->replyQuery($q, $viewerId)->limit(self::REPLY_PREVIEW)])
             ->paginate($request->integer('per_page', 20));
+
+        foreach ($comments->items() as $comment) {
+            $this->decorate($comment, $video);
+            $comment->replies->each(fn ($reply) => $this->decorate($reply, $video));
+        }
 
         $responseData = [
             'contents' => $comments->items(),
@@ -39,6 +53,7 @@ class CommentController extends Controller
                 'last_page' => $comments->lastPage(),
                 'per_page' => $comments->perPage(),
                 'total' => $comments->total(),
+                'total_all' => $video->comments()->count(),
                 'has_more' => $comments->hasMorePages(),
             ],
         ];
@@ -47,8 +62,36 @@ class CommentController extends Controller
     }
 
     /**
-     * Post a comment on a video. Requires authentication. Broadcasts the new
-     * comment to everyone currently viewing this video's comments.
+     * Replies to one top-level comment, oldest first. Guest-accessible. Used
+     * by "View more replies" once the embedded preview runs out.
+     */
+    public function replies(VideoComment $comment, Request $request)
+    {
+        $viewerId = $this->currentViewerId();
+        $video = $comment->videoReview()->first(['id', 'user_id']);
+
+        $replies = $this->replyQuery($comment->replies(), $viewerId)
+            ->paginate($request->integer('per_page', 10));
+
+        foreach ($replies->items() as $reply) {
+            $this->decorate($reply, $video);
+        }
+
+        return ApiResponse::success([
+            'contents' => $replies->items(),
+            'meta' => [
+                'current_page' => $replies->currentPage(),
+                'total' => $replies->total(),
+                'has_more' => $replies->hasMorePages(),
+            ],
+        ], 'Replies retrieved successfully.');
+    }
+
+    /**
+     * Post a comment on a video, or a reply when `parent_id` is given.
+     * Replies stay one level deep: replying to a reply attaches to the same
+     * top-level comment, while the notification still goes to the person
+     * whose reply was answered. Broadcasts to everyone viewing the comments.
      */
     public function store(VideoReview $video, Request $request)
     {
@@ -57,32 +100,35 @@ class CommentController extends Controller
             'parent_id' => 'nullable|integer|exists:video_comments,id',
         ]);
 
-        $parent = null;
+        $repliedTo = null;
         if ($request->filled('parent_id')) {
-            $parent = VideoComment::where('id', $request->integer('parent_id'))
+            $repliedTo = VideoComment::where('id', $request->integer('parent_id'))
                 ->where('video_review_id', $video->id)
                 ->first();
 
-            if (! $parent) {
+            if (! $repliedTo) {
                 return ApiResponse::error('The comment being replied to does not belong to this video.', 422);
             }
         }
 
         $comment = $video->comments()->create([
             'user_id' => auth()->id(),
-            'parent_id' => $parent?->id,
+            'parent_id' => $repliedTo ? ($repliedTo->parent_id ?? $repliedTo->id) : null,
             'body' => $request->body,
         ]);
-        $comment->load('user:id,name,username,profile_picture');
+        $comment->load(self::USER_FIELDS);
         $comment->setAttribute('likes_count', 0);
         $comment->setAttribute('is_liked', false);
+        $comment->setAttribute('replies_count', 0);
+        $comment->setRelation('replies', collect());
+        $this->decorate($comment, $video);
 
-        broadcast(new CommentCreated($comment));
+        $this->sideEffect(fn () => broadcast(new CommentCreated($comment)));
 
-        if ($parent && $parent->user_id !== auth()->id()) {
-            $parent->user->notify(new CommentReplied($comment, $parent));
-        } elseif (! $parent && $video->user_id !== auth()->id()) {
-            $video->user->notify(new VideoCommented($comment));
+        if ($repliedTo && $repliedTo->user_id !== auth()->id()) {
+            $this->sideEffect(fn () => $repliedTo->user->notify(new CommentReplied($comment, $repliedTo)));
+        } elseif (! $repliedTo && $video->user_id !== auth()->id()) {
+            $this->sideEffect(fn () => $video->user->notify(new VideoCommented($comment)));
         }
 
         return ApiResponse::success($comment, 'Comment posted successfully.', 201);
@@ -100,10 +146,13 @@ class CommentController extends Controller
 
         $videoReviewId = $comment->video_review_id;
         $commentId = $comment->id;
+        $parentId = $comment->parent_id;
+        // Replies are removed with it (cascade), so clients drop them too.
+        $removed = 1 + $comment->replies()->count();
 
         $comment->delete();
 
-        broadcast(new CommentDeleted($videoReviewId, $commentId));
+        $this->sideEffect(fn () => broadcast(new CommentDeleted($videoReviewId, $commentId, $parentId, $removed)));
 
         return ApiResponse::success(null, 'Comment deleted successfully.');
     }
@@ -129,12 +178,40 @@ class CommentController extends Controller
 
         $likesCount = $comment->likes()->count();
 
-        broadcast(new CommentLiked($comment->video_review_id, $comment->id, $likesCount));
+        $this->sideEffect(fn () => broadcast(new CommentLiked($comment->video_review_id, $comment->id, $likesCount)));
 
         return ApiResponse::success([
             'likes_count' => $likesCount,
             'is_liked' => $isLiked,
         ], $isLiked ? 'Comment liked.' : 'Comment unliked.');
+    }
+
+    /**
+     * Shared shape for replies: author, like count, viewer's like, oldest first.
+     */
+    private function replyQuery($query, ?int $viewerId)
+    {
+        return $query
+            ->with(self::USER_FIELDS)
+            ->withCount('likes')
+            ->when($viewerId, fn ($q) => $this->withLikedByViewer($q, $viewerId))
+            ->reorder()
+            ->oldest();
+    }
+
+    private function withLikedByViewer($query, int $viewerId)
+    {
+        return $query->withExists([
+            'likes as is_liked' => fn ($q) => $q->where('user_id', $viewerId),
+        ]);
+    }
+
+    /**
+     * Marks comments written by the video's uploader ("Creator" badge).
+     */
+    private function decorate(VideoComment $comment, VideoReview $video): void
+    {
+        $comment->setAttribute('is_creator', $comment->user_id === $video->user_id);
     }
 
     /**

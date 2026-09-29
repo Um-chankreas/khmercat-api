@@ -31,6 +31,8 @@ class VideoReviewController extends Controller
             'lng' => 'nullable|required_with:lat|numeric|between:-180,180',
             'radius_km' => 'nullable|integer|min:1|max:200',
             'hashtag' => 'nullable|string|max:100',
+            'restaurant_id' => 'nullable|integer',
+            'user_id' => 'nullable|integer',
         ]);
 
         $tab = $request->input('tab', 'for_you');
@@ -46,10 +48,16 @@ class VideoReviewController extends Controller
             'hashtags:id,name',
         ])
             ->withCount(['likes', 'comments'])
-            ->where('status', 'ready');
+            ->where('status', 'ready')
+            // Hide videos of unpublished or deleted restaurants.
+            ->whereHas('restaurant', fn ($r) => $r->published());
 
         if ($request->filled('restaurant_id')) {
             $query->where('restaurant_id', $request->integer('restaurant_id'));
+        }
+
+        if ($request->filled('user_id')) {
+            $query->where('user_id', $request->integer('user_id'));
         }
 
         if ($request->filled('type')) {
@@ -91,7 +99,7 @@ class VideoReviewController extends Controller
             });
         }
 
-        // This route is public, but still show each video's like/save state
+        // This route is public, but still show each video's like/save state.
         // for whoever's currently signed in (guests just won't have a token).
         if ($viewerId) {
             $query->withExists([
@@ -242,7 +250,7 @@ class VideoReviewController extends Controller
                 auth()->user()->name.' liked your video.',
                 ['type' => 'video_liked', 'video_id' => (string) $video->id]
             );
-            $video->user->notify(new VideoLiked($video, auth()->user()));
+            $this->sideEffect(fn () => $video->user->notify(new VideoLiked($video, auth()->user())));
         }
 
         return ApiResponse::success([
@@ -271,6 +279,21 @@ class VideoReviewController extends Controller
         $video->saves()->where('user_id', auth()->id())->delete();
 
         return ApiResponse::success(null, 'Video removed from saved.');
+    }
+
+    /**
+     * Counts one view of a video. Public, so guests' views count too; the
+     * route is throttled to keep one client from inflating the number.
+     */
+    public function recordView(VideoReview $video)
+    {
+        if ($video->status !== 'ready') {
+            return ApiResponse::error('Video not found.', 404);
+        }
+
+        $video->increment('views_count');
+
+        return ApiResponse::success(['views_count' => $video->views_count], 'View recorded.');
     }
 
     private function handleUpload(Request $request, int $restaurantId, string $type, ?int $rating = null)

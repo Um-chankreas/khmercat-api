@@ -37,6 +37,7 @@ class CommentCreated implements ShouldBroadcastNow
         return [
             'id' => $this->comment->id,
             'video_review_id' => $this->comment->video_review_id,
+            'parent_id' => $this->comment->parent_id,
             'body' => $this->comment->body,
             'user' => $this->comment->user,
             'likes_count' => 0,
@@ -45,6 +46,9 @@ class CommentCreated implements ShouldBroadcastNow
             // client already knows its own like state for comments it
             // posted or liked itself from the REST response that action got.
             'is_liked' => false,
+            'is_creator' => (bool) $this->comment->is_creator,
+            'replies_count' => 0,
+            'replies' => [],
             'created_at' => $this->comment->created_at?->toJSON(),
         ];
     }

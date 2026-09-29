@@ -34,6 +34,16 @@ INI_DIR="$DIR/.dev/php-overrides"
 PHP_VERSION="$(php -r 'echo PHP_MAJOR_VERSION . PHP_MINOR_VERSION;')"
 VAR_NAME="HERD_PHP_${PHP_VERSION}_INI_SCAN_DIR"
 
+# 3. Live updates (comments, notifications) go through Laravel Reverb on
+#    port 8080. Without it the app shows "Reconnecting…" and falls back to
+#    polling every few seconds. It listens on all interfaces so the phone
+#    can reach it at the same IP as the API, and stops with this script.
+REVERB_PORT_TO_USE="${REVERB_PORT:-8080}"
+echo "Starting Reverb (live updates) on ws://$HOST:$REVERB_PORT_TO_USE"
+php artisan reverb:start --host=0.0.0.0 --port="$REVERB_PORT_TO_USE" &
+REVERB_PID=$!
+trap 'kill "$REVERB_PID" 2>/dev/null || true' EXIT INT TERM
+
 echo "Starting server on http://$HOST:$PORT (upload limits via $VAR_NAME, multi-worker via --no-reload)"
 export "$VAR_NAME=$INI_DIR"
-exec php artisan serve --host="$HOST" --port="$PORT" --no-reload
+php artisan serve --host="$HOST" --port="$PORT" --no-reload

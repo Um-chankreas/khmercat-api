@@ -21,8 +21,17 @@ class UserController extends Controller
     public function show(string $username)
     {
         $user = User::where('username', $username)
-            ->select(['id', 'name', 'username', 'profile_picture', 'profile_thumbnail', 'cover_picture', 'cover_thumbnail', 'bio', 'created_at'])
-            ->withCount(['followers', 'following'])
+            ->select([
+                'id', 'name', 'username', 'profile_picture', 'profile_thumbnail', 'cover_picture', 'cover_thumbnail',
+                'bio', 'is_verified', 'facebook_url', 'tiktok_url', 'telegram_username', 'created_at',
+            ])
+            ->withCount([
+                'followers',
+                'following',
+                'videoReviews as reviews_count' => fn ($q) => $q
+                    ->where('type', VideoReview::TYPE_REVIEW)
+                    ->where('status', 'ready'),
+            ])
             ->first();
 
         if (! $user) {
@@ -32,6 +41,14 @@ class UserController extends Controller
         $user->setAttribute(
             'posts_count',
             VideoReview::where('user_id', $user->id)->where('status', 'ready')->count()
+        );
+
+        // Real follow state for the signed-in viewer (guests: false).
+        $viewerId = $this->currentViewerId();
+        $user->setAttribute(
+            'is_following',
+            $viewerId !== null && $viewerId !== $user->id
+                && User::find($viewerId)?->isFollowing($user) === true
         );
 
         $user->setAttribute(
@@ -186,7 +203,7 @@ class UserController extends Controller
         $viewer->follow($target);
 
         if (! $wasAlreadyFollowing) {
-            $target->notify(new UserFollowed($viewer));
+            $this->sideEffect(fn () => $target->notify(new UserFollowed($viewer)));
         }
 
         return ApiResponse::success([

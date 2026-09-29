@@ -66,6 +66,15 @@ class ProcessRestaurantVideo implements ShouldQueue
         ]);
 
         $video = $ffmpeg->open($fullPath);
+
+        // Length in whole seconds, for the "0:45" badge on video cards. Not
+        // worth failing the whole upload over if ffprobe can't read it.
+        try {
+            $durationSeconds = (int) round((float) $ffmpeg->getFFProbe()->format($fullPath)->get('duration'));
+        } catch (Throwable $e) {
+            Log::warning('Could not read video duration: '.$e->getMessage());
+            $durationSeconds = null;
+        }
         $baseName = pathinfo($this->tempFilePath, PATHINFO_FILENAME);
 
         // 5. Generate Thumbnail Frame (at 1 second mark)
@@ -143,6 +152,7 @@ class ProcessRestaurantVideo implements ShouldQueue
             'original_size' => $originalSize,
             'compressed_size' => $compressedSize,
             'compression_ratio' => round($compressionRatio, 2),
+            'duration_seconds' => $durationSeconds ?: null,
             'status' => 'ready',
         ]);
 
@@ -191,7 +201,13 @@ class ProcessRestaurantVideo implements ShouldQueue
                     "{$restaurant->name} posted a new video.",
                     ['type' => 'restaurant_video', 'video_id' => (string) $this->videoReview->id]
                 );
-                $follower->notify(new RestaurantPostedVideo($restaurant, $this->videoReview));
+                // The video is already saved as ready; a Reverb outage must
+                // not fail (and retry) the whole processing job.
+                try {
+                    $follower->notify(new RestaurantPostedVideo($restaurant, $this->videoReview));
+                } catch (Throwable $e) {
+                    report($e);
+                }
             }
         }
     }

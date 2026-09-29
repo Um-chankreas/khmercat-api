@@ -37,6 +37,7 @@ class User extends Authenticatable implements JWTSubject
         'cover_picture',
         'cover_thumbnail',
         'bio',
+        'is_verified',
         'facebook_url',
         'tiktok_url',
         'telegram_username',
@@ -66,7 +67,16 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'is_verified' => 'boolean',
         ];
+    }
+
+    /**
+     * Every video this user uploaded (reviews and restaurant posts).
+     */
+    public function videoReviews(): HasMany
+    {
+        return $this->hasMany(VideoReview::class);
     }
 
     public function getJWTIdentifier()

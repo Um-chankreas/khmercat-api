@@ -31,6 +31,8 @@ class VideoReview extends Model
         'compressed_size',
         'compression_ratio',
         'aspect_ratio',
+        'duration_seconds',
+        'views_count',
         'status',
     ];
 
@@ -62,6 +64,8 @@ class VideoReview extends Model
         'original_size' => 'integer',
         'compressed_size' => 'integer',
         'rating' => 'integer',
+        'duration_seconds' => 'integer',
+        'views_count' => 'integer',
     ];
 
     /**

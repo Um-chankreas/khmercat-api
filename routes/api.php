@@ -7,9 +7,11 @@ use App\Http\Controllers\Api\NotificationController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantController;
+use App\Http\Controllers\Api\RestaurantMenuController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VideoReviewController;
+use Illuminate\Broadcasting\BroadcastController;
 use Illuminate\Support\Facades\Route;
 
 // Authentication Endpoints
@@ -30,12 +32,15 @@ Route::prefix('auth')->group(function () {
 Route::get('videos/stream/{filename}', [VideoReviewController::class, 'streamVideo'])->name('videos.stream');
 Route::get('videos/feed', [VideoReviewController::class, 'feed']);
 Route::get('videos/{video}/comments', [CommentController::class, 'index'])->whereNumber('video');
+Route::get('comments/{comment}/replies', [CommentController::class, 'replies'])->whereNumber('comment');
 Route::get('videos/{video}', [VideoReviewController::class, 'show'])->whereNumber('video');
+Route::post('videos/{video}/view', [VideoReviewController::class, 'recordView'])->whereNumber('video')->middleware('throttle:60,1');
 Route::get('search', [SearchController::class, 'index']);
 Route::get('users/{username}', [UserController::class, 'show']);
 Route::get('users/{username}/videos', [UserController::class, 'videos']);
 // Numeric constraint keeps this from swallowing the literal `restaurants/mine` route below.
 Route::get('restaurants/{id}', [RestaurantController::class, 'show'])->whereNumber('id');
+Route::get('restaurants/{id}/menu', [RestaurantMenuController::class, 'index'])->whereNumber('id');
 
 /*
 |--------------------------------------------------------------------------
@@ -50,7 +55,7 @@ Route::middleware('auth:api')->group(function () {
     // The framework auto-registers `/broadcasting/auth` too, but only under
     // `web` (session) middleware — useless for this JWT-only API, so this
     // reuses Laravel's own controller under `auth:api` instead.
-    Route::post('broadcasting/auth', [\Illuminate\Broadcasting\BroadcastController::class, 'authenticate']);
+    Route::post('broadcasting/auth', [BroadcastController::class, 'authenticate']);
 
     // Authenticated User Profile & Session
     Route::prefix('auth')->group(function () {
@@ -63,7 +68,8 @@ Route::middleware('auth:api')->group(function () {
     Route::prefix('restaurants')->group(function () {
         Route::post('create', [RestaurantController::class, 'create']);
         Route::get('mine', [RestaurantController::class, 'mine']);
-        Route::post('switch', [RestaurantController::class, 'switch']);
+        // Throttled: switching back to personal checks the password.
+        Route::post('switch', [RestaurantController::class, 'switch'])->middleware('throttle:10,1');
         Route::post('videos/upload', [VideoReviewController::class, 'uploadRestaurantVideo']);
     });
 
@@ -91,6 +97,13 @@ Route::middleware('auth:api')->group(function () {
     Route::get('users/{username}/likes', [UserController::class, 'likedVideos']);
     Route::get('users/{username}/saves', [UserController::class, 'savedVideos']);
     Route::prefix('restaurants/{id}')->whereNumber('id')->group(function () {
+        // Owner/manager tools: edit details, logo and cover.
+        Route::put('/', [RestaurantController::class, 'update']);
+        Route::delete('/', [RestaurantController::class, 'destroy'])->middleware('throttle:10,1');
+        Route::post('avatar', [RestaurantController::class, 'uploadAvatar']);
+        Route::post('cover', [RestaurantController::class, 'uploadCover']);
+        Route::post('menu', [RestaurantMenuController::class, 'store']);
+        Route::delete('menu/{imageId}', [RestaurantMenuController::class, 'destroy'])->whereNumber('imageId');
         Route::post('follow', [RestaurantController::class, 'follow']);
         Route::delete('follow', [RestaurantController::class, 'unfollow']);
     });
@@ -106,6 +119,8 @@ Route::middleware('auth:api')->group(function () {
     Route::prefix('notifications')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
         Route::post('read-all', [NotificationController::class, 'markAllRead']);
+        Route::post('read', [NotificationController::class, 'markManyRead']);
+        Route::delete('batch', [NotificationController::class, 'destroyMany']);
         Route::post('{id}/read', [NotificationController::class, 'markRead']);
         Route::delete('/', [NotificationController::class, 'destroyAll']);
         Route::delete('{id}', [NotificationController::class, 'destroy']);
