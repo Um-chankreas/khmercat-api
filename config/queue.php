@@ -40,7 +40,10 @@ return [
             'connection' => env('DB_QUEUE_CONNECTION'),
             'table' => env('DB_QUEUE_TABLE', 'jobs'),
             'queue' => env('DB_QUEUE', 'default'),
-            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 90),
+            // Must stay above the longest job's $timeout (video processing,
+            // 1900s): a job still running at retry_after is handed to a
+            // second worker and processed twice.
+            'retry_after' => (int) env('DB_QUEUE_RETRY_AFTER', 2000),
             'after_commit' => false,
         ],
 

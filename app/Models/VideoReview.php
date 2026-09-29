@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 class VideoReview extends Model
 {
@@ -67,6 +68,26 @@ class VideoReview extends Model
         'duration_seconds' => 'integer',
         'views_count' => 'integer',
     ];
+
+    /**
+     * The URL players load. Stored values are either the file's path or an
+     * older absolute stream URL; either way only the filename is kept, and
+     * the URL is built now — so switching delivery (config/video.php) or
+     * APP_URL applies to every existing video too.
+     */
+    protected function videoUrl(): Attribute
+    {
+        return Attribute::get(function (?string $value) {
+            $filename = $value ? basename(parse_url($value, PHP_URL_PATH) ?: '') : '';
+            if ($filename === '') {
+                return null;
+            }
+
+            return config('video.stream_through_app')
+                ? route('videos.stream', ['filename' => $filename])
+                : Storage::disk('public')->url('reviews/videos/'.$filename);
+        });
+    }
 
     /**
      * Get the formatted human-readable original file size.

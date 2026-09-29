@@ -4,9 +4,7 @@ namespace App\Jobs;
 
 use App\Models\VideoReview;
 use App\Notifications\RestaurantPostedVideo;
-use FFMpeg\Coordinate\TimeCode;
-use FFMpeg\FFMpeg;
-use FFMpeg\Format\Video\X264;
+use App\Services\VideoTranscoder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -17,159 +15,84 @@ class ProcessRestaurantVideo implements ShouldQueue
 {
     use Queueable;
 
-    public $timeout = 600;
-
-    /** Below this size a second encode isn't worth the extra wait. */
-    private const RECOMPRESS_MIN_BYTES = 20 * 1024 * 1024;
+    // Covers a worst-case full encode (VideoTranscoder allows 1800s). Keep
+    // below the queue's retry_after (config/queue.php).
+    public $timeout = 1900;
 
     public function __construct(
         public VideoReview $videoReview,
         public string $tempFilePath
     ) {}
 
-    public function handle(): void
+    public function handle(VideoTranscoder $transcoder): void
     {
-        // 1. Detect system binary paths
-        $ffmpegPath = match (true) {
-            file_exists('/opt/homebrew/bin/ffmpeg') => '/opt/homebrew/bin/ffmpeg',
-            file_exists('/usr/local/bin/ffmpeg') => '/usr/local/bin/ffmpeg',
-            default => '/usr/bin/ffmpeg',
-        };
-
-        $ffprobePath = match (true) {
-            file_exists('/opt/homebrew/bin/ffprobe') => '/opt/homebrew/bin/ffprobe',
-            file_exists('/usr/local/bin/ffprobe') => '/usr/local/bin/ffprobe',
-            default => '/usr/bin/ffprobe',
-        };
-
-        // 2. Resolve absolute file path
-        $rawStoragePath = Storage::disk('local')->path($this->tempFilePath);
-        $fullPath = realpath($rawStoragePath);
-
-        if (! $fullPath || ! file_exists($fullPath)) {
-            Log::error("Video processing failed: File not found at {$rawStoragePath}");
+        $sourcePath = Storage::disk('local')->path($this->tempFilePath);
+        if (! file_exists($sourcePath)) {
+            Log::error("Video processing failed: file not found at {$sourcePath}");
             $this->videoReview->update(['status' => 'failed']);
 
             return;
         }
+        $originalSize = (int) filesize($sourcePath);
 
-        // 3. Capture original file size early
-        $originalSize = Storage::disk('local')->exists($this->tempFilePath)
-            ? (int) Storage::disk('local')->size($this->tempFilePath)
-            : 0;
-
-        Log::info('Starting video compression - Original size: '.($originalSize / 1024 / 1024).' MB');
-
-        // 4. Initialize FFmpeg
-        $ffmpeg = FFMpeg::create([
-            'ffmpeg.binaries' => $ffmpegPath,
-            'ffprobe.binaries' => $ffprobePath,
-            'timeout' => 3600,
-            'ffmpeg.threads' => $this->encoderThreads(),
-        ]);
-
-        $video = $ffmpeg->open($fullPath);
-
-        // Length in whole seconds, for the "0:45" badge on video cards. Not
-        // worth failing the whole upload over if ffprobe can't read it.
-        try {
-            $durationSeconds = (int) round((float) $ffmpeg->getFFProbe()->format($fullPath)->get('duration'));
-        } catch (Throwable $e) {
-            Log::warning('Could not read video duration: '.$e->getMessage());
-            $durationSeconds = null;
-        }
+        $probe = $transcoder->probe($sourcePath);
+        $duration = isset($probe['format']['duration']) ? (float) $probe['format']['duration'] : null;
         $baseName = pathinfo($this->tempFilePath, PATHINFO_FILENAME);
 
-        // 5. Generate Thumbnail Frame (at 1 second mark)
-        Storage::disk('public')->makeDirectory('reviews/thumbnails');
-        $thumbnailRelativePath = 'reviews/thumbnails/'.$baseName.'.jpg';
-        $thumbnailFullPath = Storage::disk('public')->path($thumbnailRelativePath);
+        $public = Storage::disk('public');
+        $public->makeDirectory('reviews/thumbnails');
+        $public->makeDirectory('reviews/videos');
+        $thumbnailPath = 'reviews/thumbnails/'.$baseName.'.jpg';
+        $videoPath = 'reviews/videos/'.$baseName.'.mp4';
+        $videoFullPath = $public->path($videoPath);
 
-        $frame = $video->frame(TimeCode::fromSeconds(1));
-        $frame->save($thumbnailFullPath);
-        Log::info("Thumbnail generated: {$thumbnailRelativePath}");
+        $transcoder->thumbnail($sourcePath, $public->path($thumbnailPath), $duration);
 
-        // 6. High-Quality Video Compression Setup
-        Storage::disk('public')->makeDirectory('reviews/videos');
-        $compressedRelativePath = 'reviews/videos/'.$baseName.'.mp4';
-        $compressedFullPath = Storage::disk('public')->path($compressedRelativePath);
+        // The app compresses before uploading, so most videos are already
+        // fine and only need a remux; re-encoding those would cost minutes
+        // of CPU and a little quality for nothing.
+        $plan = VideoTranscoder::plan($probe);
+        $mode = $plan['mode'];
+        Log::info("Video {$this->videoReview->id}: {$mode}", ['reasons' => $plan['reasons']]);
 
-        $qualityProfile = $this->getQualityProfile($originalSize);
-        $sizeInMB = $originalSize / (1024 * 1024);
-        Log::info("Using quality profile for {$sizeInMB} MB video - CRF: {$qualityProfile['crf']}, Preset: {$qualityProfile['preset']}");
-
-        $format = new X264('aac');
-        $format->setAudioKiloBitrate($qualityProfile['audio']); // Use profile-based audio bitrate
-
-        $format->setAdditionalParameters([
-            '-crf', $qualityProfile['crf'],
-            '-preset', $qualityProfile['preset'],
-            '-profile:v', 'high',
-            '-level', '4.2',
-            '-maxrate', $qualityProfile['maxrate'],
-            '-bufsize', $qualityProfile['bufsize'],
-            '-movflags', 'faststart',
-            '-pix_fmt', 'yuv420p',
-            '-vf', "scale='min(1920,iw)':-2:flags=lanczos",
-        ]);
-
-        // Save compressed video
-        $video->save($format, $compressedFullPath);
-        Log::info("Initial compression completed for: {$compressedRelativePath}");
-
-        // 7. Calculate file sizes and compression ratio
-        $compressedSize = Storage::disk('public')->exists($compressedRelativePath)
-            ? (int) Storage::disk('public')->size($compressedRelativePath)
-            : 0;
-
-        $compressionRatio = $originalSize > 0 ? ($compressedSize / $originalSize) * 100 : 0;
-        $compressedMB = $compressedSize / (1024 * 1024);
-
-        Log::info("Compression ratio: {$compressionRatio}% (Original: {$sizeInMB} MB → Compressed: {$compressedMB} MB)");
-
-        // 8. Re-compress if the first pass barely helped — but only for big
-        // uploads. Already-compressed clips (TikTok/Instagram downloads, screen
-        // recordings) often land at 90%+, and a second full encode there
-        // doubles the wait to save a fraction of a MB.
-        if ($originalSize > self::RECOMPRESS_MIN_BYTES && $compressionRatio >= 90) {
-            Log::warning("Poor compression detected ({$compressionRatio}%), re-compressing with lower quality...");
-            $this->recompressVideo($ffmpegPath, $ffprobePath, $fullPath, $compressedFullPath);
-
-            $compressedSize = Storage::disk('public')->exists($compressedRelativePath)
-                ? (int) Storage::disk('public')->size($compressedRelativePath)
-                : 0;
-
-            $compressionRatio = $originalSize > 0 ? ($compressedSize / $originalSize) * 100 : 0;
-            $compressedMB = $compressedSize / (1024 * 1024);
-            Log::info("Re-compression completed - New ratio: {$compressionRatio}% (Compressed: {$compressedMB} MB)");
+        if ($mode === VideoTranscoder::REMUX) {
+            try {
+                $transcoder->remux($sourcePath, $videoFullPath);
+            } catch (Throwable $e) {
+                Log::warning("Remux failed, encoding instead: {$e->getMessage()}");
+                $mode = VideoTranscoder::ENCODE;
+            }
+        }
+        if ($mode === VideoTranscoder::ENCODE) {
+            $transcoder->encode($sourcePath, $videoFullPath, $plan['fps']);
         }
 
-        // 9. Update Database Record
-        // video_url deliberately goes through the videos.stream route rather
-        // than the raw /storage/... static path: PHP's built-in dev server
-        // (php artisan serve) doesn't support HTTP Range requests for static
-        // files, which most mobile video players require to play at all.
-        // The stream route goes through Laravel/Symfony's response pipeline,
-        // which handles Range/206 properly even under the dev server.
+        $compressedSize = (int) filesize($videoFullPath);
+        $compressionRatio = $originalSize > 0 ? $compressedSize / $originalSize * 100 : 0;
+
+        // video_url is resolved to its public URL when read (see
+        // VideoReview::videoUrl), so the stored value only needs the file.
         $this->videoReview->update([
-            'video_url' => route('videos.stream', ['filename' => $baseName.'.mp4']),
-            'thumbnail_url' => Storage::disk('public')->url($thumbnailRelativePath),
+            'video_url' => $videoPath,
+            'thumbnail_url' => $public->url($thumbnailPath),
             'original_size' => $originalSize,
             'compressed_size' => $compressedSize,
             'compression_ratio' => round($compressionRatio, 2),
-            'duration_seconds' => $durationSeconds ?: null,
+            'duration_seconds' => $duration ? (int) round($duration) : null,
             'status' => 'ready',
         ]);
 
-        Log::info("Video processing completed successfully for video review ID: {$this->videoReview->id}");
+        Log::info(sprintf(
+            'Video %d ready (%s): %.1f MB -> %.1f MB',
+            $this->videoReview->id,
+            $mode,
+            $originalSize / 1048576,
+            $compressedSize / 1048576,
+        ));
 
         $this->notifyFollowersOfNewReview();
 
-        // 10. Clean up temporary upload file
-        if (Storage::disk('local')->exists($this->tempFilePath)) {
-            Storage::disk('local')->delete($this->tempFilePath);
-            Log::info("Temporary file cleaned up: {$this->tempFilePath}");
-        }
+        Storage::disk('local')->delete($this->tempFilePath);
     }
 
     /**
@@ -214,95 +137,6 @@ class ProcessRestaurantVideo implements ShouldQueue
                     report($e);
                 }
             }
-        }
-    }
-
-    /**
-     * Get compression quality profile based on original file size.
-     *
-     * Presets are tuned for a small VPS: `slow` took ~30s for a 2 MB clip on
-     * the production droplet, while `faster` is several times quicker for a
-     * slightly larger file at the same CRF — users wait on this before their
-     * video shows up for others.
-     */
-    private function getQualityProfile(int $originalSizeBytes): array
-    {
-        $sizeInMB = $originalSizeBytes / (1024 * 1024);
-
-        return match (true) {
-            $sizeInMB < 50 => [      // Small videos - high quality, still real compression
-                'crf' => 22,
-                'preset' => 'faster',
-                'audio' => 160,
-                'maxrate' => '8M',
-                'bufsize' => '12M',
-            ],
-            $sizeInMB < 200 => [     // Medium videos - balanced
-                'crf' => 23,
-                'preset' => 'faster',
-                'audio' => 128,
-                'maxrate' => '6M',
-                'bufsize' => '9M',
-            ],
-            default => [             // Large videos - prioritize compression
-                'crf' => 26,
-                'preset' => 'veryfast',
-                'audio' => 96,
-                'maxrate' => '4M',
-                'bufsize' => '6M',
-            ],
-        };
-    }
-
-    /**
-     * Leave one CPU core free so nginx / PHP-FPM keep streaming feed videos
-     * while this encodes — with "all cores" (0) a 2-core server stalls every
-     * video in the app until the encode finishes.
-     */
-    private function encoderThreads(): int
-    {
-        $cores = (int) trim((string) @shell_exec('nproc'));
-
-        return max(1, $cores - 1);
-    }
-
-    /**
-     * Re-compress video with lower quality settings if initial compression wasn't effective.
-     * Re-encodes from the original source (not the first-pass output) into $outputPath —
-     * re-encoding an already-lossy-compressed file loses quality for no benefit, and ffmpeg
-     * refuses to use the same path for input and output anyway.
-     */
-    private function recompressVideo(string $ffmpegPath, string $ffprobePath, string $sourcePath, string $outputPath): void
-    {
-        try {
-            $ffmpeg = FFMpeg::create([
-                'ffmpeg.binaries' => $ffmpegPath,
-                'ffprobe.binaries' => $ffprobePath,
-                'timeout' => 3600,
-                'ffmpeg.threads' => $this->encoderThreads(),
-            ]);
-
-            $video = $ffmpeg->open($sourcePath);
-            $format = new X264('aac');
-            $format->setAudioKiloBitrate(96);
-
-            $format->setAdditionalParameters([
-                '-crf', '28',                           // Meaningfully more aggressive than any first-pass profile
-                '-preset', 'veryfast',                  // Faster processing
-                '-profile:v', 'main',                   // Smaller profile
-                '-level', '4.0',
-                '-maxrate', '3M',                       // Lower bitrate ceiling
-                '-bufsize', '5M',
-                '-movflags', 'faststart',
-                '-pix_fmt', 'yuv420p',
-                '-vf', "scale='min(1280,iw)':-2",      // Reduce to 1280p
-            ]);
-
-            $video->save($format, $outputPath);
-            Log::info('Video re-compressed successfully');
-        } catch (Throwable $exception) {
-            Log::error('Re-compression failed: '.$exception->getMessage());
-            throw $exception;
         }
     }
 
