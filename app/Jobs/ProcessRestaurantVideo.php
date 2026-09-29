@@ -62,7 +62,7 @@ class ProcessRestaurantVideo implements ShouldQueue
             'ffmpeg.binaries' => $ffmpegPath,
             'ffprobe.binaries' => $ffprobePath,
             'timeout' => 3600,
-            'ffmpeg.threads' => 0, // Auto-detect and use maximum available CPU cores
+            'ffmpeg.threads' => $this->encoderThreads(),
         ]);
 
         $video = $ffmpeg->open($fullPath);
@@ -245,6 +245,18 @@ class ProcessRestaurantVideo implements ShouldQueue
     }
 
     /**
+     * Leave one CPU core free so nginx / PHP-FPM keep streaming feed videos
+     * while this encodes — with "all cores" (0) a 2-core server stalls every
+     * video in the app until the encode finishes.
+     */
+    private function encoderThreads(): int
+    {
+        $cores = (int) trim((string) @shell_exec('nproc'));
+
+        return max(1, $cores - 1);
+    }
+
+    /**
      * Re-compress video with lower quality settings if initial compression wasn't effective.
      * Re-encodes from the original source (not the first-pass output) into $outputPath —
      * re-encoding an already-lossy-compressed file loses quality for no benefit, and ffmpeg
@@ -257,7 +269,7 @@ class ProcessRestaurantVideo implements ShouldQueue
                 'ffmpeg.binaries' => $ffmpegPath,
                 'ffprobe.binaries' => $ffprobePath,
                 'timeout' => 3600,
-                'ffmpeg.threads' => 0,
+                'ffmpeg.threads' => $this->encoderThreads(),
             ]);
 
             $video = $ffmpeg->open($sourcePath);
