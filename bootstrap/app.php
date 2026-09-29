@@ -49,7 +49,19 @@ return Application::configure(basePath: dirname(__DIR__))
             }
 
             if ($e instanceof HttpExceptionInterface) {
-                return ApiResponse::error($e->getMessage() ?: 'Request failed.', $e->getStatusCode());
+                // Rate limited: a readable message with the wait time.
+                if ($e->getStatusCode() === 429) {
+                    $seconds = (int) ($e->getHeaders()['Retry-After'] ?? 60);
+
+                    return ApiResponse::error(
+                        "Too many attempts. Please wait {$seconds} seconds and try again.",
+                        429
+                    )->withHeaders($e->getHeaders());
+                }
+
+                // Keep the exception's headers (e.g. Retry-After).
+                return ApiResponse::error($e->getMessage() ?: 'Request failed.', $e->getStatusCode())
+                    ->withHeaders($e->getHeaders());
             }
 
             if (! config('app.debug')) {
