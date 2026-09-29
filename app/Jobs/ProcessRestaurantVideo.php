@@ -19,6 +19,9 @@ class ProcessRestaurantVideo implements ShouldQueue
 
     public $timeout = 600;
 
+    /** Below this size a second encode isn't worth the extra wait. */
+    private const RECOMPRESS_MIN_BYTES = 20 * 1024 * 1024;
+
     public function __construct(
         public VideoReview $videoReview,
         public string $tempFilePath
@@ -124,9 +127,11 @@ class ProcessRestaurantVideo implements ShouldQueue
 
         Log::info("Compression ratio: {$compressionRatio}% (Original: {$sizeInMB} MB → Compressed: {$compressedMB} MB)");
 
-        // 8. Validate compression and re-compress if it didn't actually help,
-        // regardless of the original file's size.
-        if ($originalSize > 0 && $compressionRatio >= 90) {
+        // 8. Re-compress if the first pass barely helped — but only for big
+        // uploads. Already-compressed clips (TikTok/Instagram downloads, screen
+        // recordings) often land at 90%+, and a second full encode there
+        // doubles the wait to save a fraction of a MB.
+        if ($originalSize > self::RECOMPRESS_MIN_BYTES && $compressionRatio >= 90) {
             Log::warning("Poor compression detected ({$compressionRatio}%), re-compressing with lower quality...");
             $this->recompressVideo($ffmpegPath, $ffprobePath, $fullPath, $compressedFullPath);
 
@@ -213,7 +218,12 @@ class ProcessRestaurantVideo implements ShouldQueue
     }
 
     /**
-     * Get compression quality profile based on original file size
+     * Get compression quality profile based on original file size.
+     *
+     * Presets are tuned for a small VPS: `slow` took ~30s for a 2 MB clip on
+     * the production droplet, while `faster` is several times quicker for a
+     * slightly larger file at the same CRF — users wait on this before their
+     * video shows up for others.
      */
     private function getQualityProfile(int $originalSizeBytes): array
     {
@@ -221,22 +231,22 @@ class ProcessRestaurantVideo implements ShouldQueue
 
         return match (true) {
             $sizeInMB < 50 => [      // Small videos - high quality, still real compression
-                'crf' => 20,
-                'preset' => 'slow',
+                'crf' => 22,
+                'preset' => 'faster',
                 'audio' => 160,
                 'maxrate' => '8M',
                 'bufsize' => '12M',
             ],
             $sizeInMB < 200 => [     // Medium videos - balanced
                 'crf' => 23,
-                'preset' => 'medium',
+                'preset' => 'faster',
                 'audio' => 128,
                 'maxrate' => '6M',
                 'bufsize' => '9M',
             ],
             default => [             // Large videos - prioritize compression
                 'crf' => 26,
-                'preset' => 'fast',
+                'preset' => 'veryfast',
                 'audio' => 96,
                 'maxrate' => '4M',
                 'bufsize' => '6M',
@@ -278,7 +288,7 @@ class ProcessRestaurantVideo implements ShouldQueue
 
             $format->setAdditionalParameters([
                 '-crf', '28',                           // Meaningfully more aggressive than any first-pass profile
-                '-preset', 'fast',                      // Faster processing
+                '-preset', 'veryfast',                  // Faster processing
                 '-profile:v', 'main',                   // Smaller profile
                 '-level', '4.0',
                 '-maxrate', '3M',                       // Lower bitrate ceiling
