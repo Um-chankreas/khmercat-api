@@ -24,6 +24,9 @@ set -euo pipefail
 #    .env spins up multiple worker processes so streaming and uploading
 #    can actually happen at the same time. Laravel silently ignores
 #    PHP_CLI_SERVER_WORKERS without --no-reload, so both are required.
+#    The feed keeps ~6 long video requests open (current ± 1 video, each
+#    streamed + cached) and an upload holds one more, so a handful of
+#    workers isn't enough — default to 16 unless .env sets its own.
 
 HOST="${1:-192.168.1.235}"
 PORT="${2:-8000}"
@@ -43,6 +46,12 @@ echo "Starting Reverb (live updates) on ws://$HOST:$REVERB_PORT_TO_USE"
 php artisan reverb:start --host=0.0.0.0 --port="$REVERB_PORT_TO_USE" &
 REVERB_PID=$!
 trap 'kill "$REVERB_PID" 2>/dev/null || true' EXIT INT TERM
+
+if [ -z "${PHP_CLI_SERVER_WORKERS:-}" ] && ! grep -qE '^[[:space:]]*PHP_CLI_SERVER_WORKERS=' "$DIR/.env" 2>/dev/null; then
+  export PHP_CLI_SERVER_WORKERS=16
+fi
+WORKERS="${PHP_CLI_SERVER_WORKERS:-$(grep -E '^[[:space:]]*PHP_CLI_SERVER_WORKERS=' "$DIR/.env" | tail -1 | cut -d= -f2)}"
+echo "PHP dev server workers: $WORKERS (need ~8+ to stream the feed while uploading)"
 
 echo "Starting server on http://$HOST:$PORT (upload limits via $VAR_NAME, multi-worker via --no-reload)"
 export "$VAR_NAME=$INI_DIR"
