@@ -35,11 +35,16 @@ class RestaurantController extends Controller
             ->find($id);
 
         // Unpublished: only its team can open it; everyone else sees it gone.
-        if (! $restaurant || (! $restaurant->is_published && ! $restaurant->hasMember($this->viewerId()))) {
+        if (! $restaurant || ! $restaurant->visibleTo($this->viewerId())) {
             return ApiResponse::error('Restaurant not found.', 404);
         }
 
         $restaurant->setAttribute('avg_rating', $restaurant->avg_rating !== null ? round((float) $restaurant->avg_rating, 1) : null);
+        // People it follows (follows made as it), matching its Following list.
+        $restaurant->setAttribute(
+            'following_count',
+            $restaurant->following()->where('followable_type', User::class)->count()
+        );
         $restaurant->setAttribute('is_open', $restaurant->isOpenNow());
         $restaurant->setAttribute('menu_url', $restaurant->menuWebUrl());
 
@@ -113,7 +118,8 @@ class RestaurantController extends Controller
                     'delivery_time_max' => $request->delivery_time_max,
                     'opening_time' => $request->opening_time,
                     'closing_time' => $request->closing_time,
-                    'status' => 'pending',
+                    // Hidden until an admin approves it.
+                    'status' => Restaurant::STATUS_PENDING,
                     'approved_by' => null,
                 ]);
 
@@ -245,6 +251,7 @@ class RestaurantController extends Controller
             'closing_time' => 'sometimes|nullable|date_format:H:i',
             // Hide from / show to the public.
             'is_published' => 'sometimes|boolean',
+            'is_halal' => 'sometimes|boolean',
         ]);
 
         $restaurant->update($data);

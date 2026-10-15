@@ -70,6 +70,8 @@ class User extends Authenticatable implements JWTSubject
             'deactivated_at' => 'datetime',
             'password' => 'hashed',
             'is_verified' => 'boolean',
+            // Not fillable on purpose: only `php artisan admin:create` sets it.
+            'is_admin' => 'boolean',
         ];
     }
 
@@ -178,11 +180,32 @@ class User extends Authenticatable implements JWTSubject
     }
 
     /**
-     * Follow rows where this user is the one doing the following.
+     * Follow rows where this user is the one doing the following — personal
+     * ones and those made as any of their restaurants.
      */
     public function following(): HasMany
     {
         return $this->hasMany(Follow::class, 'follower_id');
+    }
+
+    /**
+     * Only the follows made as the person themself (their "Following").
+     */
+    public function personalFollowing(): HasMany
+    {
+        return $this->following()->whereNull('follower_restaurant_id');
+    }
+
+    /**
+     * Follows made as whichever profile the user is acting as right now:
+     * the active restaurant's, or their own. Following, unfollowing and
+     * "am I following?" all go through this.
+     */
+    public function actorFollowing(): HasMany
+    {
+        return $this->active_restaurant_id
+            ? $this->following()->where('follower_restaurant_id', $this->active_restaurant_id)
+            : $this->personalFollowing();
     }
 
     /**
@@ -195,7 +218,7 @@ class User extends Authenticatable implements JWTSubject
 
     public function isFollowing(Model $followable): bool
     {
-        return $this->following()
+        return $this->actorFollowing()
             ->where('followable_id', $followable->getKey())
             ->where('followable_type', $followable->getMorphClass())
             ->exists();
@@ -204,6 +227,7 @@ class User extends Authenticatable implements JWTSubject
     public function follow(Model $followable): void
     {
         $this->following()->firstOrCreate([
+            'follower_restaurant_id' => $this->active_restaurant_id,
             'followable_id' => $followable->getKey(),
             'followable_type' => $followable->getMorphClass(),
         ]);
@@ -211,26 +235,26 @@ class User extends Authenticatable implements JWTSubject
 
     public function unfollow(Model $followable): void
     {
-        $this->following()
+        $this->actorFollowing()
             ->where('followable_id', $followable->getKey())
             ->where('followable_type', $followable->getMorphClass())
             ->delete();
     }
 
     /**
-     * IDs of users this user follows.
+     * IDs of users followed by the profile this user is acting as.
      */
     public function followingUserIds(): array
     {
-        return $this->following()->where('followable_type', User::class)->pluck('followable_id')->all();
+        return $this->actorFollowing()->where('followable_type', User::class)->pluck('followable_id')->all();
     }
 
     /**
-     * IDs of restaurants this user follows.
+     * IDs of restaurants followed by the profile this user is acting as.
      */
     public function followingRestaurantIds(): array
     {
-        return $this->following()->where('followable_type', Restaurant::class)->pluck('followable_id')->all();
+        return $this->actorFollowing()->where('followable_type', Restaurant::class)->pluck('followable_id')->all();
     }
 
     /**
@@ -248,5 +272,13 @@ class User extends Authenticatable implements JWTSubject
     public function deviceTokens(): HasMany
     {
         return $this->hasMany(DeviceToken::class);
+    }
+
+    /**
+     * Saved addresses (Menu → Address in the app).
+     */
+    public function addresses(): HasMany
+    {
+        return $this->hasMany(UserAddress::class);
     }
 }

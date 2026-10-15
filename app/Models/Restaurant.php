@@ -39,8 +39,10 @@ class Restaurant extends Model
         'longitude',
         'status',
         'approved_by',
+        'approved_at',
         'is_sponsored',
         'is_published',
+        'is_halal',
     ];
 
     /**
@@ -60,6 +62,8 @@ class Restaurant extends Model
             'delivery_time_max' => 'integer',
             'is_sponsored' => 'boolean',
             'is_published' => 'boolean',
+            'is_halal' => 'boolean',
+            'approved_at' => 'datetime',
         ];
     }
 
@@ -152,12 +156,37 @@ class Restaurant extends Model
         return $this->hasMany(VideoReview::class)->where('type', VideoReview::TYPE_RESTAURANT_POST);
     }
 
+    public const STATUS_PENDING = 'pending';
+
+    public const STATUS_APPROVED = 'approved';
+
+    public const STATUS_REJECTED = 'rejected';
+
+    public const STATUSES = [self::STATUS_PENDING, self::STATUS_APPROVED, self::STATUS_REJECTED];
+
     /**
-     * Only restaurants visible to the public (not unpublished by their owner).
+     * Only restaurants visible to the public: approved by an admin, and not
+     * unpublished by their owner.
      */
     public function scopePublished($query)
     {
-        return $query->where('is_published', true);
+        return $query->where('is_published', true)->where('status', self::STATUS_APPROVED);
+    }
+
+    public function isPublic(): bool
+    {
+        return $this->is_published && $this->status === self::STATUS_APPROVED;
+    }
+
+    /**
+     * Who may open it: everyone once it's public; until then its own team
+     * and admins.
+     */
+    public function visibleTo(?int $userId): bool
+    {
+        return $this->isPublic()
+            || $this->hasMember($userId)
+            || ($userId !== null && User::whereKey($userId)->where('is_admin', true)->exists());
     }
 
     /**
@@ -204,5 +233,14 @@ class Restaurant extends Model
     public function followerUsers(): Collection
     {
         return $this->followers()->with('follower')->get()->pluck('follower')->filter()->values();
+    }
+
+    /**
+     * Follows made by its team while acting as this restaurant (its
+     * "Following").
+     */
+    public function following(): HasMany
+    {
+        return $this->hasMany(Follow::class, 'follower_restaurant_id');
     }
 }

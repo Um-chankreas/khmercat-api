@@ -47,7 +47,7 @@ class VideoReviewController extends Controller
             'restaurant:id,name,profile_picture',
             'hashtags:id,name',
         ])
-            ->withCount(['likes', 'comments'])
+            ->withCount(['likes', 'comments', 'saves'])
             ->where('status', 'ready')
             // Hide videos of unpublished or deleted restaurants.
             ->whereHas('restaurant', fn ($r) => $r->published())
@@ -166,7 +166,7 @@ class VideoReviewController extends Controller
             'user:id,name,username,profile_picture',
             'restaurant:id,name,profile_picture',
             'hashtags:id,name',
-        ])->loadCount(['likes', 'comments']);
+        ])->loadCount(['likes', 'comments', 'saves']);
 
         $viewerId = $this->currentViewerId();
         if ($viewerId) {
@@ -273,14 +273,18 @@ class VideoReviewController extends Controller
     {
         $video->saves()->firstOrCreate(['user_id' => auth()->id()]);
 
-        return ApiResponse::success(null, 'Video saved.');
+        return ApiResponse::success([
+            'saves_count' => $video->saves()->count(),
+        ], 'Video saved.');
     }
 
     public function unsave(VideoReview $video)
     {
         $video->saves()->where('user_id', auth()->id())->delete();
 
-        return ApiResponse::success(null, 'Video removed from saved.');
+        return ApiResponse::success([
+            'saves_count' => $video->saves()->count(),
+        ], 'Video removed from saved.');
     }
 
     /**
@@ -320,7 +324,7 @@ class VideoReviewController extends Controller
                 'user:id,name,username,profile_picture',
                 'restaurant:id,name,profile_picture',
                 'hashtags:id,name',
-            ])->loadCount(['likes', 'comments']);
+            ])->loadCount(['likes', 'comments', 'saves']);
             $review->setAttribute('liked_by_me', false);
             $review->setAttribute('saved_by_me', false);
 

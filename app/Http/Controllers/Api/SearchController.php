@@ -31,6 +31,7 @@ class SearchController extends Controller
      * Query params:
      *  - q            keyword (optional when category_id is given)
      *  - category_id  only restaurants in this cuisine (and videos about them)
+     *  - halal        1 = only halal restaurants (and videos about them)
      *  - lat, lng     viewer position: adds `distance_km` to each restaurant
      *  - sort         relevance (default) | nearest
      *
@@ -40,11 +41,12 @@ class SearchController extends Controller
     public function index(Request $request)
     {
         $request->validate([
-            'q' => 'nullable|required_without:category_id|string|max:100',
+            'q' => 'nullable|required_without_all:category_id,halal|string|max:100',
             'category_id' => 'nullable|integer|exists:restaurant_categories,id',
             'lat' => 'nullable|required_with:lng|numeric|between:-90,90',
             'lng' => 'nullable|required_with:lat|numeric|between:-180,180',
             'sort' => 'nullable|in:relevance,nearest',
+            'halal' => 'nullable|boolean',
         ]);
 
         $q = trim((string) $request->input('q', ''));
@@ -53,11 +55,12 @@ class SearchController extends Controller
         $lat = $hasLocation ? $request->float('lat') : null;
         $lng = $hasLocation ? $request->float('lng') : null;
         $sort = $request->input('sort', 'relevance');
+        $halal = $request->boolean('halal');
 
         $viewer = $this->currentViewer();
 
-        [$restaurants, $recommended, $restaurantTotal] = $this->searchRestaurants($q, $categoryId, $lat, $lng, $sort, $viewer);
-        [$videos, $videoTotal] = $this->searchVideos($q, $categoryId, $viewer);
+        [$restaurants, $recommended, $restaurantTotal] = $this->searchRestaurants($q, $categoryId, $halal, $lat, $lng, $sort, $viewer);
+        [$videos, $videoTotal] = $this->searchVideos($q, $categoryId, $halal, $viewer);
         [$users, $userTotal] = $this->searchUsers($q, $viewer);
 
         return ApiResponse::success([
@@ -76,7 +79,7 @@ class SearchController extends Controller
     /**
      * @return array{0: Collection, 1: Collection, 2: int}
      */
-    private function searchRestaurants(string $q, ?int $categoryId, ?float $lat, ?float $lng, string $sort, ?User $viewer): array
+    private function searchRestaurants(string $q, ?int $categoryId, bool $halal, ?float $lat, ?float $lng, string $sort, ?User $viewer): array
     {
         $query = Restaurant::query()
             ->published()
@@ -87,7 +90,8 @@ class SearchController extends Controller
                     ->orWhere('address', 'like', $like)
                     ->orWhereHas('category', fn (Builder $c) => $c->where('name', 'like', $like));
             }))
-            ->when($categoryId, fn (Builder $query) => $query->where('category_id', $categoryId));
+            ->when($categoryId, fn (Builder $query) => $query->where('category_id', $categoryId))
+            ->when($halal, fn (Builder $query) => $query->where('is_halal', true));
 
         $total = (clone $query)->count();
 
@@ -153,7 +157,7 @@ class SearchController extends Controller
     /**
      * @return array{0: Collection, 1: int}
      */
-    private function searchVideos(string $q, ?int $categoryId, ?User $viewer): array
+    private function searchVideos(string $q, ?int $categoryId, bool $halal, ?User $viewer): array
     {
         $tag = mb_strtolower(ltrim($q, '#'));
 
@@ -170,6 +174,10 @@ class SearchController extends Controller
             ->when($categoryId, fn (Builder $query) => $query->whereHas(
                 'restaurant',
                 fn (Builder $r) => $r->where('category_id', $categoryId)
+            ))
+            ->when($halal, fn (Builder $query) => $query->whereHas(
+                'restaurant',
+                fn (Builder $r) => $r->where('is_halal', true)
             ));
 
         $total = (clone $query)->count();
@@ -180,7 +188,7 @@ class SearchController extends Controller
                 'restaurant:id,name,profile_picture',
                 'hashtags:id,name',
             ])
-            ->withCount(['likes', 'comments'])
+            ->withCount(['likes', 'comments', 'saves'])
             ->when($viewer, fn (Builder $query) => $query->withExists([
                 'likes as liked_by_me' => fn ($l) => $l->where('user_id', $viewer->id),
                 'saves as saved_by_me' => fn ($s) => $s->where('user_id', $viewer->id),

@@ -33,4 +33,23 @@ class PlacesController extends Controller
 
         return ApiResponse::success($details);
     }
+
+    /**
+     * The street address at a map pin (reverse geocoding), for the saved
+     * address screen. 404 when Google has nothing for that spot.
+     */
+    public function reverse(Request $request, GooglePlacesService $places)
+    {
+        $request->validate([
+            'lat' => 'required|numeric|between:-90,90',
+            'lng' => 'required|numeric|between:-180,180',
+        ]);
+
+        $address = $places->reverseGeocode($request->float('lat'), $request->float('lng'));
+        if (! $address) {
+            return ApiResponse::error('No address found for this location.', 404);
+        }
+
+        return ApiResponse::success(['address' => $address]);
+    }
 }

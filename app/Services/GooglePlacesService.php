@@ -174,4 +174,36 @@ class GooglePlacesService
             'business_status' => $data['businessStatus'] ?? null,
         ];
     }
+
+    /**
+     * The formatted address at a coordinate (Geocoding API), or null when
+     * there's none or the lookup fails. Needs the Geocoding API enabled on
+     * the same key as Places.
+     */
+    public function reverseGeocode(float $lat, float $lng): ?string
+    {
+        try {
+            $response = Http::timeout(5)->get('https://maps.googleapis.com/maps/api/geocode/json', [
+                'latlng' => "{$lat},{$lng}",
+                'key' => $this->apiKey,
+            ]);
+        } catch (ConnectionException $e) {
+            Log::error('Google reverse geocode connection failed', ['error' => $e->getMessage()]);
+
+            return null;
+        }
+
+        // This API answers 200 even when it refuses the request; the real
+        // outcome is in `status`.
+        if (! $response->successful() || $response->json('status') !== 'OK') {
+            Log::warning('Google reverse geocode failed', [
+                'status' => $response->json('status'),
+                'error' => $response->json('error_message'),
+            ]);
+
+            return null;
+        }
+
+        return $response->json('results.0.formatted_address');
+    }
 }

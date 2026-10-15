@@ -1,10 +1,14 @@
 <?php
 
 use App\Http\Controllers\Api\AccountController;
+use App\Http\Controllers\Api\AddressController;
+use App\Http\Controllers\Api\AdminController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CommentController;
+use App\Http\Controllers\Api\ContentReportController;
 use App\Http\Controllers\Api\DeviceTokenController;
 use App\Http\Controllers\Api\NotificationController;
+use App\Http\Controllers\Api\PeopleController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantController;
@@ -14,6 +18,7 @@ use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\VideoReviewController;
 use App\Http\Middleware\EnsureAccountActive;
+use App\Http\Middleware\EnsureAdmin;
 use Illuminate\Broadcasting\BroadcastController;
 use Illuminate\Support\Facades\Route;
 
@@ -41,9 +46,14 @@ Route::post('videos/{video}/view', [VideoReviewController::class, 'recordView'])
 Route::get('search', [SearchController::class, 'index']);
 Route::get('users/{username}', [UserController::class, 'show']);
 Route::get('users/{username}/videos', [UserController::class, 'videos']);
+Route::get('users/{username}/followers', [PeopleController::class, 'userFollowers']);
+Route::get('users/{username}/following', [PeopleController::class, 'userFollowing']);
 // Numeric constraint keeps this from swallowing the literal `restaurants/mine` route below.
 Route::get('restaurants/{id}', [RestaurantController::class, 'show'])->whereNumber('id');
 Route::get('restaurants/{id}/menu', [RestaurantMenuController::class, 'index'])->whereNumber('id');
+Route::get('restaurants/{id}/followers', [PeopleController::class, 'restaurantFollowers'])->whereNumber('id');
+Route::get('restaurants/{id}/reviewers', [PeopleController::class, 'restaurantReviewers'])->whereNumber('id');
+Route::get('restaurants/{id}/following', [PeopleController::class, 'restaurantFollowing'])->whereNumber('id');
 
 /*
 |--------------------------------------------------------------------------
@@ -94,6 +104,7 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
         Route::delete('like', [VideoReviewController::class, 'unlike']);
         Route::post('save', [VideoReviewController::class, 'save']);
         Route::delete('save', [VideoReviewController::class, 'unsave']);
+        Route::post('report', [ContentReportController::class, 'store'])->middleware('throttle:20,1');
         Route::post('comments', [CommentController::class, 'store']);
     });
     Route::delete('comments/{comment}', [CommentController::class, 'destroy']);
@@ -123,6 +134,25 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
 
     Route::get('/places/autocomplete', [PlacesController::class, 'autocomplete']);
     Route::get('/places/details', [PlacesController::class, 'details']);
+    Route::get('/places/reverse', [PlacesController::class, 'reverse']);
+
+    // Admin tools (Menu → Admin), admins only.
+    Route::prefix('admin')->middleware(EnsureAdmin::class)->group(function () {
+        Route::get('restaurants', [AdminController::class, 'restaurants']);
+        Route::post('restaurants/{id}/approve', [AdminController::class, 'approveRestaurant'])->whereNumber('id');
+        Route::post('restaurants/{id}/reject', [AdminController::class, 'rejectRestaurant'])->whereNumber('id');
+        Route::get('reports', [AdminController::class, 'reports']);
+        Route::post('reports/{videoId}/remove', [AdminController::class, 'removeReportedVideo'])->whereNumber('videoId');
+        Route::post('reports/{videoId}/dismiss', [AdminController::class, 'dismissReports'])->whereNumber('videoId');
+    });
+
+    // Saved addresses (Menu → Address).
+    Route::prefix('addresses')->group(function () {
+        Route::get('/', [AddressController::class, 'index']);
+        Route::post('/', [AddressController::class, 'store']);
+        Route::put('{id}', [AddressController::class, 'update'])->whereNumber('id');
+        Route::delete('{id}', [AddressController::class, 'destroy'])->whereNumber('id');
+    });
 
     // Push notification device tokens (Firebase Cloud Messaging).
     Route::post('device-tokens', [DeviceTokenController::class, 'store']);

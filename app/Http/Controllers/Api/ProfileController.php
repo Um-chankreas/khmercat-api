@@ -31,7 +31,11 @@ class ProfileController extends Controller
         }
 
         $user = auth()->user();
-        $user->loadCount(['followers', 'following']);
+        // Their own follows, not ones made as their restaurant.
+        $user->loadCount([
+            'followers',
+            'following' => fn ($q) => $q->whereNull('follower_restaurant_id'),
+        ]);
 
         $postsCount = VideoReview::where('user_id', $user->id)->count();
         $likesCount = VideoLike::whereHas(
@@ -45,6 +49,12 @@ class ProfileController extends Controller
             'avatar' => $user->profile_picture,
             'bio' => $user->bio,
             'email' => $user->email,
+            'phone' => $user->phone_number,
+            'social_links' => [
+                'facebook' => $user->facebook_url,
+                'tiktok' => $user->tiktok_url,
+                'telegram' => $user->telegram_username,
+            ],
             'following_count' => $user->following_count,
             'followers_count' => $user->followers_count,
             'posts_count' => $postsCount,
@@ -172,7 +182,7 @@ class ProfileController extends Controller
             'user:id,name,username,profile_picture',
             'restaurant:id,name,profile_picture',
         ])
-            ->withCount(['likes', 'comments'])
+            ->withCount(['likes', 'comments', 'saves'])
             ->withExists([
                 'likes as is_liked' => fn ($q) => $q->where('user_id', $userId),
                 'saves as is_favorite' => fn ($q) => $q->where('user_id', $userId),
@@ -226,7 +236,7 @@ class ProfileController extends Controller
         }
 
         $video->loadMissing(['user:id,name,username,profile_picture', 'restaurant:id,name,profile_picture']);
-        $video->loadCount(['likes', 'comments']);
+        $video->loadCount(['likes', 'comments', 'saves']);
         $video->setAttribute('is_favorite', $isFavorite);
         $video->setAttribute('is_liked', VideoLike::where('video_review_id', $video->id)->where('user_id', $userId)->exists());
 

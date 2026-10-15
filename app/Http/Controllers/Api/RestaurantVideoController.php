@@ -62,7 +62,7 @@ class RestaurantVideoController extends Controller
                 'user:id,name,username,profile_picture',
                 'restaurant:id,name,profile_picture',
             ])
-            ->withCount(['likes', 'comments'])
+            ->withCount(['likes', 'comments', 'saves'])
             ->orderByDesc('id')
             ->limit($limit + 1)
             ->get();

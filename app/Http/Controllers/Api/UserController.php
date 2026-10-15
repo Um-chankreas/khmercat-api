@@ -27,7 +27,8 @@ class UserController extends Controller
             ])
             ->withCount([
                 'followers',
-                'following',
+                // Their own follows, not ones made as their restaurant.
+                'following' => fn ($q) => $q->whereNull('follower_restaurant_id'),
                 'videoReviews as reviews_count' => fn ($q) => $q
                     ->where('type', VideoReview::TYPE_REVIEW)
                     ->where('status', 'ready'),
@@ -80,7 +81,7 @@ class UserController extends Controller
                 'restaurant:id,name,profile_picture',
                 'hashtags:id,name',
             ])
-            ->withCount(['likes', 'comments']);
+            ->withCount(['likes', 'comments', 'saves']);
 
         if (! $isOwnProfile) {
             $query->where('status', 'ready');
@@ -131,7 +132,7 @@ class UserController extends Controller
                 'restaurant:id,name,profile_picture',
                 'hashtags:id,name',
             ])
-            ->withCount(['likes', 'comments']);
+            ->withCount(['likes', 'comments', 'saves']);
 
         return ApiResponse::success(
             $this->paginateVideos($query, $request, $viewerId),

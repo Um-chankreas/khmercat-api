@@ -31,7 +31,7 @@ class RestaurantMenuController extends Controller
             $viewerId = auth('api')->id();
         } catch (\Throwable $e) {
         }
-        if (! $restaurant || (! $restaurant->is_published && ! $restaurant->hasMember($viewerId))) {
+        if (! $restaurant || ! $restaurant->visibleTo($viewerId)) {
             return ApiResponse::error('Restaurant not found.', 404);
         }
 
