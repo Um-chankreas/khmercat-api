@@ -243,6 +243,10 @@ class RestaurantController extends Controller
                 }
             }],
             'telegram_username' => ['sometimes', 'nullable', 'string', 'max:64', 'regex:/^@?[A-Za-z0-9_]{4,32}$/'],
+            // Replaces the whole list; one link per app, an empty list clears it.
+            'delivery_links' => 'sometimes|nullable|array|max:'.count(Restaurant::DELIVERY_APPS),
+            'delivery_links.*.name' => 'required|string|distinct|in:'.implode(',', Restaurant::DELIVERY_APPS),
+            'delivery_links.*.url' => 'required|url|max:500',
             'price_level' => 'sometimes|nullable|integer|between:1,4',
             'service_type' => 'sometimes|nullable|in:'.implode(',', Restaurant::SERVICE_TYPES),
             'delivery_time_min' => 'sometimes|nullable|integer|min:1|max:600',
@@ -253,6 +257,15 @@ class RestaurantController extends Controller
             'is_published' => 'sometimes|boolean',
             'is_halal' => 'sometimes|boolean',
         ]);
+
+        if (array_key_exists('delivery_links', $data)) {
+            // Keep only {name, url}, and store "none" as null.
+            $links = array_map(
+                fn ($l) => ['name' => $l['name'], 'url' => $l['url']],
+                $data['delivery_links'] ?? []
+            );
+            $data['delivery_links'] = $links ?: null;
+        }
 
         $restaurant->update($data);
 

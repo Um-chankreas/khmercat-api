@@ -103,6 +103,42 @@ class RestaurantManageTest extends TestCase
             ->assertOk()->assertJsonPath('data.facebook_url', null);
     }
 
+    public function test_owner_can_set_and_clear_delivery_links(): void
+    {
+        $url = "/api/restaurants/{$this->restaurant->id}";
+
+        $this->putJson($url, ['delivery_links' => [
+            ['name' => 'grab', 'url' => 'https://food.grab.com/kh/en/restaurant/angkor-bites'],
+            ['name' => 'foodpanda', 'url' => 'https://www.foodpanda.com.kh/restaurant/abcd'],
+        ]], $this->as($this->owner))
+            ->assertOk()
+            ->assertJsonPath('data.delivery_links.0.name', 'grab')
+            ->assertJsonPath('data.delivery_links.1.url', 'https://www.foodpanda.com.kh/restaurant/abcd');
+
+        $this->putJson($url, ['delivery_links' => []], $this->as($this->owner))
+            ->assertOk()
+            ->assertJsonPath('data.delivery_links', null);
+    }
+
+    public function test_invalid_delivery_links_are_rejected(): void
+    {
+        $url = "/api/restaurants/{$this->restaurant->id}";
+
+        // Unknown app, a non-URL, and the same app twice.
+        $this->putJson($url, ['delivery_links' => [
+            ['name' => 'ubereats', 'url' => 'https://ubereats.com/x'],
+            ['name' => 'grab', 'url' => 'not a url'],
+        ]], $this->as($this->owner))
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['delivery_links.0.name', 'delivery_links.1.url']);
+
+        $this->putJson($url, ['delivery_links' => [
+            ['name' => 'grab', 'url' => 'https://food.grab.com/a'],
+            ['name' => 'grab', 'url' => 'https://food.grab.com/b'],
+        ]], $this->as($this->owner))
+            ->assertUnprocessable();
+    }
+
     public function test_invalid_social_links_are_rejected(): void
     {
         $this->putJson("/api/restaurants/{$this->restaurant->id}", [

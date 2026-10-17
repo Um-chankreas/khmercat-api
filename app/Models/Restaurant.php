@@ -25,6 +25,7 @@ class Restaurant extends Model
         'facebook_url',
         'tiktok_url',
         'telegram_username',
+        'delivery_links',
         'price_level',
         'service_type',
         'delivery_time_min',
@@ -52,6 +53,12 @@ class Restaurant extends Model
 
     public const SERVICE_TYPES = ['dine_in', 'delivery', 'dine_in_delivery', 'takeaway'];
 
+    /**
+     * Delivery apps a restaurant can link to (the `name` of each entry in
+     * delivery_links); the app shows each one's logo.
+     */
+    public const DELIVERY_APPS = ['grab', 'foodpanda', 'wownow'];
+
     protected function casts(): array
     {
         return [
@@ -63,6 +70,7 @@ class Restaurant extends Model
             'is_sponsored' => 'boolean',
             'is_published' => 'boolean',
             'is_halal' => 'boolean',
+            'delivery_links' => 'array',
             'approved_at' => 'datetime',
         ];
     }
