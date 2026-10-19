@@ -44,6 +44,7 @@ class User extends Authenticatable implements JWTSubject
         'email_otp',
         'email_otp_expires_at',
         'email_verified_at',
+        'terms_accepted_at',
         'active_restaurant_id',
         'deactivated_at',
     ];
@@ -68,6 +69,7 @@ class User extends Authenticatable implements JWTSubject
         return [
             'email_verified_at' => 'datetime',
             'deactivated_at' => 'datetime',
+            'terms_accepted_at' => 'datetime',
             'password' => 'hashed',
             'is_verified' => 'boolean',
             // Not fillable on purpose: only `php artisan admin:create` sets it.

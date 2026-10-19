@@ -51,6 +51,7 @@ class AuthController extends Controller
                     'username' => $autoUsername,
                     'password' => $request->password, // Hashed automatically via model cast
                     'email_verified_at' => now(), // Auto-verify — no OTP step wired to this flow
+                    'terms_accepted_at' => now(),
                 ]);
             });
             $user = $user->fresh();
@@ -83,6 +84,7 @@ class AuthController extends Controller
                 'username' => $autoUsername,
                 'password' => $request->password,
                 'email_verified_at' => null, // Unverified
+                'terms_accepted_at' => now(),
                 'email_otp' => $otpCode,
                 'email_otp_expires_at' => now()->addMinutes(10),
             ]);

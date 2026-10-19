@@ -5,8 +5,8 @@ namespace App\Http\Controllers\Api;
 use App\Helpers\ApiResponse;
 use App\Http\Controllers\Controller;
 use App\Models\Restaurant;
+use App\Models\RestaurantReview;
 use App\Models\User;
-use App\Models\VideoReview;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Relations\Relation;
 use Illuminate\Http\Request;
@@ -38,8 +38,7 @@ class PeopleController extends Controller
     }
 
     /**
-     * Everyone with a published review of the restaurant, most recent
-     * reviewer first, with how many reviews each has posted there.
+     * Everyone who has reviewed the restaurant, most recent first.
      */
     public function restaurantReviewers(Request $request, int $id)
     {
@@ -49,14 +48,13 @@ class PeopleController extends Controller
         }
 
         $page = max(1, $request->integer('page', 1));
-        $rows = VideoReview::query()
+        // One review per person (see RestaurantReview), latest first.
+        $rows = RestaurantReview::query()
             ->where('restaurant_id', $restaurant->id)
-            ->where('type', VideoReview::TYPE_REVIEW)
-            ->where('status', 'ready')
             ->whereHas('user', fn ($q) => $q->active())
-            ->selectRaw('user_id, count(*) as reviews_count, max(id) as last_review_id')
-            ->groupBy('user_id')
-            ->orderByDesc('last_review_id')
+            ->selectRaw('user_id, 1 as reviews_count')
+            ->orderByDesc('updated_at')
+            ->orderByDesc('id')
             ->forPage($page, self::PER_PAGE + 1)
             ->get();
 

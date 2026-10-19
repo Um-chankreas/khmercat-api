@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Carbon;
@@ -82,13 +83,25 @@ class Restaurant extends Model
      */
     public function isOpenNow(?\DateTimeInterface $at = null): ?bool
     {
+        $moment = Carbon::instance($at ?? now())->setTimezone(self::BUSINESS_TIMEZONE);
+        $now = $moment->format('H:i:s');
+
+        // A holiday notice for today (closed / special hours) wins.
+        $holiday = $at === null
+            ? $this->todayHoliday
+            : $this->holidays()
+                ->whereDate('date', '<=', $moment->toDateString())
+                ->whereDate('end_date', '>=', $moment->toDateString())
+                ->first();
+        $override = $holiday?->isOpenAt($now);
+        if ($override !== null) {
+            return $override;
+        }
+
         if (! $this->opening_time || ! $this->closing_time) {
             return null;
         }
 
-        $now = Carbon::instance($at ?? now())
-            ->setTimezone(self::BUSINESS_TIMEZONE)
-            ->format('H:i:s');
         $open = substr($this->opening_time, 0, 8);
         $close = substr($this->closing_time, 0, 8);
 
@@ -149,11 +162,47 @@ class Restaurant extends Model
     }
 
     /**
-     * Customer video reviews left for this restaurant.
+     * Customers' ratings + comments (one each), behind avg_rating,
+     * reviews_count and the Reviews tab.
      */
     public function reviews(): HasMany
     {
+        return $this->hasMany(RestaurantReview::class);
+    }
+
+    /**
+     * Customer review videos posted about this restaurant.
+     */
+    public function reviewVideos(): HasMany
+    {
         return $this->hasMany(VideoReview::class)->where('type', VideoReview::TYPE_REVIEW);
+    }
+
+    /**
+     * Holiday notices (closed / special hours / open), one per date.
+     */
+    public function holidays(): HasMany
+    {
+        return $this->hasMany(RestaurantHoliday::class);
+    }
+
+    /** The notice covering today, if any (Phnom Penh date). */
+    public function todayHoliday(): HasOne
+    {
+        $today = RestaurantHoliday::today();
+
+        return $this->hasOne(RestaurantHoliday::class)
+            ->whereDate('date', '<=', $today)
+            ->whereDate('end_date', '>=', $today)
+            ->orderBy('date');
+    }
+
+    /** The next notice still to come or under way — its poster. */
+    public function upcomingHoliday(): HasOne
+    {
+        return $this->hasOne(RestaurantHoliday::class)
+            ->whereDate('end_date', '>=', RestaurantHoliday::today())
+            ->orderBy('date');
     }
 
     /**

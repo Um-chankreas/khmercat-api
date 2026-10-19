@@ -41,7 +41,7 @@ class UserController extends Controller
 
         $user->setAttribute(
             'posts_count',
-            VideoReview::where('user_id', $user->id)->where('status', 'ready')->count()
+            VideoReview::videosOnly()->where('user_id', $user->id)->where('status', 'ready')->count()
         );
 
         // Real follow state for the signed-in viewer (guests: false).
@@ -76,7 +76,7 @@ class UserController extends Controller
         $viewerId = $this->currentViewerId();
         $isOwnProfile = $viewerId && $viewerId === $target->id;
 
-        $query = VideoReview::where('user_id', $target->id)
+        $query = VideoReview::videosOnly()->where('user_id', $target->id)
             ->with([
                 'restaurant:id,name,profile_picture',
                 'hashtags:id,name',

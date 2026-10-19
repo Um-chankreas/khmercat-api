@@ -95,12 +95,12 @@ class SearchController extends Controller
 
         $total = (clone $query)->count();
 
-        $readyReviews = fn ($r) => $r->where('status', 'ready');
+        $activeReviewers = fn ($r) => $r->whereHas('user', fn ($u) => $u->active());
 
         $pool = $query
-            ->with('category:id,name,icon')
-            ->withCount(['followers', 'reviews as reviews_count' => $readyReviews])
-            ->withAvg(['reviews as avg_rating' => fn ($r) => $r->where('status', 'ready')->whereNotNull('rating')], 'rating')
+            ->with(['category:id,name,icon', 'todayHoliday'])
+            ->withCount(['followers', 'reviews as reviews_count' => $activeReviewers])
+            ->withAvg(['reviews as avg_rating' => $activeReviewers], 'rating')
             ->limit(self::RESTAURANT_POOL)
             ->get();
 
@@ -112,6 +112,7 @@ class SearchController extends Controller
             $r->setAttribute('distance_km', $distance !== null ? round($distance, 2) : null);
             $r->setAttribute('avg_rating', $r->avg_rating !== null ? round((float) $r->avg_rating, 1) : null);
             $r->setAttribute('is_open', $r->isOpenNow());
+            $r->setAttribute('today_holiday', $r->todayHoliday);
             $r->setAttribute('is_following', in_array($r->id, $followedIds));
 
             // 0 = name starts with the term, 1 = name contains it, 2 = other field matched.
@@ -161,7 +162,7 @@ class SearchController extends Controller
     {
         $tag = mb_strtolower(ltrim($q, '#'));
 
-        $query = VideoReview::where('status', 'ready')
+        $query = VideoReview::videosOnly()->where('status', 'ready')
             // Not from restaurants that are unpublished or deleted.
             ->whereHas('restaurant', fn (Builder $r) => $r->published())
             // Not from deactivated or deleted accounts.

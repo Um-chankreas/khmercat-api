@@ -21,17 +21,17 @@ class RestaurantController extends Controller
      */
     public function show(int $id)
     {
-        // Review stats count only published (ready) review videos, same as search.
-        $readyReviews = fn ($q) => $q->where('status', 'ready');
+        // Review stats come from the Reviews tab (active reviewers only).
+        $activeReviewers = fn ($q) => $q->whereHas('user', fn ($u) => $u->active());
         $restaurant = Restaurant::with('category')
             ->withCount([
                 'followers',
-                'reviews as reviews_count' => $readyReviews,
+                'reviews as reviews_count' => $activeReviewers,
                 // The restaurant's own posts, for the "Posts" stat.
-                'videos as videos_count' => $readyReviews,
+                'videos as videos_count' => fn ($q) => $q->where('status', 'ready'),
                 'menuImages as menu_images_count',
             ])
-            ->withAvg(['reviews as avg_rating' => fn ($q) => $q->where('status', 'ready')->whereNotNull('rating')], 'rating')
+            ->withAvg(['reviews as avg_rating' => $activeReviewers], 'rating')
             ->find($id);
 
         // Unpublished: only its team can open it; everyone else sees it gone.
@@ -46,6 +46,10 @@ class RestaurantController extends Controller
             $restaurant->following()->where('followable_type', User::class)->count()
         );
         $restaurant->setAttribute('is_open', $restaurant->isOpenNow());
+        // Holiday notices: today's (overrides the hours shown) and the next
+        // one to come, whose poster the profile shows.
+        $restaurant->setAttribute('today_holiday', $restaurant->todayHoliday);
+        $restaurant->setAttribute('upcoming_holiday', $restaurant->upcomingHoliday);
         $restaurant->setAttribute('menu_url', $restaurant->menuWebUrl());
 
         return ApiResponse::success($restaurant, 'Restaurant profile retrieved successfully.');
@@ -159,7 +163,7 @@ class RestaurantController extends Controller
             ->wherePivot('status', 'accepted')
             ->with('category')
             // Shown on the profile switcher cards.
-            ->withCount(['followers', 'reviews as reviews_count' => fn ($q) => $q->where('status', 'ready')])
+            ->withCount(['followers', 'reviews as reviews_count' => fn ($q) => $q->whereHas('user', fn ($u) => $u->active())])
             ->get();
 
         // A restaurant the user has since left (or that was deleted) is no

@@ -6,6 +6,8 @@ use App\Helpers\ApiResponse;
 use App\Http\Controllers\Controller;
 use App\Jobs\ProcessRestaurantVideo;
 use App\Jobs\SendPushNotificationJob;
+use App\Models\RestaurantHoliday;
+use App\Models\RestaurantReview;
 use App\Models\VideoReview;
 use App\Notifications\VideoLiked;
 use Illuminate\Http\Request;
@@ -46,6 +48,7 @@ class VideoReviewController extends Controller
             'user:id,name,username,profile_picture',
             'restaurant:id,name,profile_picture',
             'hashtags:id,name',
+            'holiday',
         ])
             ->withCount(['likes', 'comments', 'saves'])
             ->where('status', 'ready')
@@ -69,6 +72,18 @@ class VideoReviewController extends Controller
         if ($request->filled('hashtag')) {
             $tag = mb_strtolower(ltrim($request->input('hashtag'), '#'));
             $query->whereHas('hashtags', fn ($q) => $q->where('name', $tag));
+        }
+
+        // Holiday posters belong in the main feed only — not in a
+        // restaurant's or person's video grid, a type tab or a hashtag —
+        // and only until their last day has passed.
+        if (collect(['restaurant_id', 'user_id', 'type', 'hashtag'])->contains(fn ($k) => $request->filled($k))) {
+            $query->videosOnly();
+        } else {
+            $query->where(fn ($q) => $q->videosOnly()->orWhereHas(
+                'holiday',
+                fn ($h) => $h->whereDate('end_date', '>=', RestaurantHoliday::today()),
+            ));
         }
 
         // New users have no likes/follows to personalize on, so `for_you`
@@ -166,6 +181,7 @@ class VideoReviewController extends Controller
             'user:id,name,username,profile_picture',
             'restaurant:id,name,profile_picture',
             'hashtags:id,name',
+            'holiday',
         ])->loadCount(['likes', 'comments', 'saves']);
 
         $viewerId = $this->currentViewerId();
@@ -317,6 +333,18 @@ class VideoReviewController extends Controller
             ]);
 
             $review->syncHashtags($request->input('hashtags'));
+
+            // A review video is also the person's review on the restaurant's
+            // Reviews tab (one per restaurant — this updates an earlier one).
+            if ($type === VideoReview::TYPE_REVIEW && $rating !== null) {
+                RestaurantReview::upsertFor(
+                    $restaurantId,
+                    auth()->id(),
+                    $rating,
+                    RestaurantReview::commentFromCaption($request->caption),
+                    $review->id,
+                );
+            }
 
             ProcessRestaurantVideo::dispatch($review, $tempPath);
 

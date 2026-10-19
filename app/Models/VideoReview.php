@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Facades\Storage;
 
@@ -43,6 +44,9 @@ class VideoReview extends Model
     public const TYPE_REVIEW = 'review';
 
     public const TYPE_RESTAURANT_POST = 'restaurant_post';
+
+    /** A restaurant's holiday poster in the feed (an image, no video). */
+    public const TYPE_HOLIDAY_POSTER = 'holiday_poster';
 
     /**
      * The accessors to append to the model's array form.
@@ -168,6 +172,21 @@ class VideoReview extends Model
     public function comments(): HasMany
     {
         return $this->hasMany(VideoComment::class)->latest();
+    }
+
+    /** The holiday notice this feed post is for (holiday posters only). */
+    public function holiday(): HasOne
+    {
+        return $this->hasOne(RestaurantHoliday::class, 'video_review_id');
+    }
+
+    /**
+     * Actual videos only — leaves out holiday posters, for lists that are
+     * about someone's videos (profile grids, counts, search).
+     */
+    public function scopeVideosOnly($query)
+    {
+        return $query->where('type', '!=', self::TYPE_HOLIDAY_POSTER);
     }
 
     public function hashtags(): BelongsToMany

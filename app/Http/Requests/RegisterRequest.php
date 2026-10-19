@@ -29,6 +29,15 @@ class RegisterRequest extends FormRequest
             'name' => 'required|string|max:100',
             'email' => 'required|string|email|max:100',
             'password' => 'required|string|min:6',
+            // The Terms of Service checkbox on the sign-up screen.
+            'terms_accepted' => 'accepted',
+        ];
+    }
+
+    public function messages(): array
+    {
+        return [
+            'terms_accepted.accepted' => 'Please accept the Terms of Service to sign up.',
         ];
     }
 

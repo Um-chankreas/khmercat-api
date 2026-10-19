@@ -12,7 +12,9 @@ use App\Http\Controllers\Api\PeopleController;
 use App\Http\Controllers\Api\PlacesController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\RestaurantController;
+use App\Http\Controllers\Api\RestaurantHolidayController;
 use App\Http\Controllers\Api\RestaurantMenuController;
+use App\Http\Controllers\Api\RestaurantReviewController;
 use App\Http\Controllers\Api\RestaurantVideoController;
 use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\UserController;
@@ -52,6 +54,8 @@ Route::get('users/{username}/following', [PeopleController::class, 'userFollowin
 Route::get('restaurants/{id}', [RestaurantController::class, 'show'])->whereNumber('id');
 Route::get('restaurants/{id}/menu', [RestaurantMenuController::class, 'index'])->whereNumber('id');
 Route::get('restaurants/{id}/followers', [PeopleController::class, 'restaurantFollowers'])->whereNumber('id');
+Route::get('restaurants/{id}/reviews', [RestaurantReviewController::class, 'index'])->whereNumber('id');
+Route::get('restaurants/{id}/holidays', [RestaurantHolidayController::class, 'index'])->whereNumber('id');
 Route::get('restaurants/{id}/reviewers', [PeopleController::class, 'restaurantReviewers'])->whereNumber('id');
 Route::get('restaurants/{id}/following', [PeopleController::class, 'restaurantFollowing'])->whereNumber('id');
 
@@ -91,11 +95,20 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
         // Throttled: switching back to personal checks the password.
         Route::post('switch', [RestaurantController::class, 'switch'])->middleware('throttle:10,1');
         Route::post('videos/upload', [VideoReviewController::class, 'uploadRestaurantVideo']);
+        // Holiday posters, for one or several of the person's restaurants.
+        Route::post('holidays', [RestaurantHolidayController::class, 'store']);
     });
+    Route::delete('holidays/{holiday}', [RestaurantHolidayController::class, 'destroy'])->whereNumber('holiday');
 
     // Video Reviews (normal users reviewing a restaurant they select)
     Route::prefix('reviews')->group(function () {
         Route::post('upload', [VideoReviewController::class, 'uploadReview']);
+        // The Reviews tab: delete your own, like, and the restaurant's reply.
+        Route::delete('{review}', [RestaurantReviewController::class, 'destroy'])->whereNumber('review');
+        Route::post('{review}/like', [RestaurantReviewController::class, 'like'])->whereNumber('review');
+        Route::delete('{review}/like', [RestaurantReviewController::class, 'unlike'])->whereNumber('review');
+        Route::put('{review}/reply', [RestaurantReviewController::class, 'reply'])->whereNumber('review');
+        Route::delete('{review}/reply', [RestaurantReviewController::class, 'deleteReply'])->whereNumber('review');
     });
 
     // Likes, Saves & Comments
@@ -130,6 +143,8 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
         Route::delete('videos/{videoId}', [RestaurantVideoController::class, 'destroy'])->whereNumber('videoId');
         Route::post('follow', [RestaurantController::class, 'follow']);
         Route::delete('follow', [RestaurantController::class, 'unfollow']);
+        // Rate + comment without a video; posting again updates it.
+        Route::post('reviews', [RestaurantReviewController::class, 'store']);
     });
 
     Route::get('/places/autocomplete', [PlacesController::class, 'autocomplete']);

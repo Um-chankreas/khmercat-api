@@ -37,7 +37,7 @@ class ProfileController extends Controller
             'following' => fn ($q) => $q->whereNull('follower_restaurant_id'),
         ]);
 
-        $postsCount = VideoReview::where('user_id', $user->id)->count();
+        $postsCount = VideoReview::videosOnly()->where('user_id', $user->id)->count();
         $likesCount = VideoLike::whereHas(
             'videoReview', fn ($q) => $q->where('user_id', $user->id)
         )->count();
@@ -174,8 +174,8 @@ class ProfileController extends Controller
 
         $query = match ($flag) {
             'favorite' => VideoReview::whereHas('saves', fn ($q) => $q->where('user_id', $userId)),
-            'deleted' => VideoReview::onlyTrashed()->where('user_id', $userId),
-            default => VideoReview::where('user_id', $userId),
+            'deleted' => VideoReview::onlyTrashed()->videosOnly()->where('user_id', $userId),
+            default => VideoReview::videosOnly()->where('user_id', $userId),
         };
 
         $query->with([
