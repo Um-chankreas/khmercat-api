@@ -71,6 +71,7 @@ class Restaurant extends Model
             'is_sponsored' => 'boolean',
             'is_published' => 'boolean',
             'is_halal' => 'boolean',
+            'deactivated_at' => 'datetime',
             'delivery_links' => 'array',
             'approved_at' => 'datetime',
         ];
@@ -227,12 +228,17 @@ class Restaurant extends Model
      */
     public function scopePublished($query)
     {
-        return $query->where('is_published', true)->where('status', self::STATUS_APPROVED);
+        return $query->where('is_published', true)
+            ->where('status', self::STATUS_APPROVED)
+            // Taken down by an admin.
+            ->whereNull('deactivated_at');
     }
 
     public function isPublic(): bool
     {
-        return $this->is_published && $this->status === self::STATUS_APPROVED;
+        return $this->is_published
+            && $this->status === self::STATUS_APPROVED
+            && $this->deactivated_at === null;
     }
 
     /**

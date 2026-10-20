@@ -210,6 +210,13 @@ class AuthController extends Controller
                 );
             }
 
+            // Banned by an admin: no session, and the reason why.
+            if ($user->isBanned()) {
+                JWTAuth::setToken($token)->invalidate();
+
+                return ApiResponse::error($user->banMessage(), 403, null, ['banned' => true]);
+            }
+
             // Logging in is how a deactivated account comes back.
             $reactivated = $user->isDeactivated();
             if ($reactivated) {

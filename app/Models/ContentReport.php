@@ -38,6 +38,12 @@ class ContentReport extends Model
         return ['resolved_at' => 'datetime'];
     }
 
+    /** The admin who removed the video or dismissed the report. */
+    public function resolver(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'resolved_by');
+    }
+
     public function reporter(): BelongsTo
     {
         return $this->belongsTo(User::class, 'reporter_id');

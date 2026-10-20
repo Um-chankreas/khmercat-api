@@ -57,6 +57,7 @@ class User extends Authenticatable implements JWTSubject
     protected $hidden = [
         'password',
         'remember_token',
+        'banned_by',
     ];
 
     /**
@@ -70,6 +71,8 @@ class User extends Authenticatable implements JWTSubject
             'email_verified_at' => 'datetime',
             'deactivated_at' => 'datetime',
             'terms_accepted_at' => 'datetime',
+            'banned_at' => 'datetime',
+            'banned_until' => 'datetime',
             'password' => 'hashed',
             'is_verified' => 'boolean',
             // Not fillable on purpose: only `php artisan admin:create` sets it.
@@ -93,6 +96,32 @@ class User extends Authenticatable implements JWTSubject
     {
         return $query->whereNull('deactivated_at');
     }
+
+    /** Banned right now (a timed ban that has run out no longer counts). */
+    public function isBanned(): bool
+    {
+        return $this->banned_at !== null
+            && ($this->banned_until === null || $this->banned_until->isFuture());
+    }
+
+    /** What a banned person is told: until when, and why. */
+    public function banMessage(): string
+    {
+        $until = $this->banned_until
+            ? 'until '.$this->banned_until->timezone(Restaurant::BUSINESS_TIMEZONE)->format('j M Y')
+            : 'permanently';
+        $reason = self::BAN_REASONS[$this->ban_reason] ?? null;
+
+        return "Your account is banned {$until}".($reason ? " for {$reason}" : '').'.';
+    }
+
+    /** Ban reasons the admin picks from, with how they're shown. */
+    public const BAN_REASONS = [
+        'sexual' => 'nudity or sexual content',
+        'spam' => 'spam or scams',
+        'hate_harassment' => 'hate or harassment',
+        'fake_account' => 'being a fake account',
+    ];
 
     public function isDeactivated(): bool
     {

@@ -15,6 +15,11 @@ class EnsureAccountActive
 {
     public function handle(Request $request, Closure $next): Response
     {
+        // Banned since signing in: signed out everywhere (401), with why.
+        if ($request->user()?->isBanned()) {
+            return ApiResponse::error($request->user()->banMessage(), 401);
+        }
+
         if ($request->user()?->isDeactivated()) {
             return ApiResponse::error('This account is deactivated. Log in again to reactivate it.', 401);
         }

@@ -153,7 +153,14 @@ Route::middleware(['auth:api', EnsureAccountActive::class])->group(function () {
 
     // Admin tools (Menu → Admin), admins only.
     Route::prefix('admin')->middleware(EnsureAdmin::class)->group(function () {
+        Route::get('summary', [AdminController::class, 'summary']);
+        Route::get('activity', [AdminController::class, 'activity']);
         Route::get('restaurants', [AdminController::class, 'restaurants']);
+        Route::post('restaurants/{id}/deactivate', [AdminController::class, 'deactivateRestaurant'])->whereNumber('id');
+        Route::post('restaurants/{id}/activate', [AdminController::class, 'activateRestaurant'])->whereNumber('id');
+        Route::get('users', [AdminController::class, 'users']);
+        Route::post('users/{id}/ban', [AdminController::class, 'banUser'])->whereNumber('id');
+        Route::post('users/{id}/unban', [AdminController::class, 'unbanUser'])->whereNumber('id');
         Route::post('restaurants/{id}/approve', [AdminController::class, 'approveRestaurant'])->whereNumber('id');
         Route::post('restaurants/{id}/reject', [AdminController::class, 'rejectRestaurant'])->whereNumber('id');
         Route::get('reports', [AdminController::class, 'reports']);
