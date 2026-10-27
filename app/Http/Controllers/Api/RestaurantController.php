@@ -122,9 +122,12 @@ class RestaurantController extends Controller
                     'delivery_time_max' => $request->delivery_time_max,
                     'opening_time' => $request->opening_time,
                     'closing_time' => $request->closing_time,
-                    // Hidden until an admin approves it.
-                    'status' => Restaurant::STATUS_PENDING,
+                    // Approved straight away (no admin step); an admin can
+                    // still deactivate it later. approved_by stays null:
+                    // nobody approved it by hand.
+                    'status' => Restaurant::STATUS_APPROVED,
                     'approved_by' => null,
+                    'approved_at' => now(),
                 ]);
 
                 // 3. Attach creator as Owner in pivot table (restaurant_user)
