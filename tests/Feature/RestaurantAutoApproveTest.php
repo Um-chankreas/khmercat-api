@@ -41,5 +41,7 @@ class RestaurantAutoApproveTest extends TestCase
         $this->assertNull($restaurant->approved_by);
         $this->assertTrue($restaurant->isPublic());
         $this->assertTrue($restaurant->is_halal);
+        // Still acting as themselves.
+        $this->assertNull($owner->fresh()->active_restaurant_id);
     }
 }

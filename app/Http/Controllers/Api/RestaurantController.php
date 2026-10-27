@@ -137,8 +137,9 @@ class RestaurantController extends Controller
                     'status' => 'accepted',
                 ]);
 
-                // 4. Switch the user's active context to the restaurant they just created
-                $user->update(['active_restaurant_id' => $restaurant->id]);
+                // The creator stays on their personal profile; the app opens
+                // the new restaurant's page, and they switch to it when they
+                // want to act as it.
 
                 return ApiResponse::success([
                     'user' => $user->fresh(),
