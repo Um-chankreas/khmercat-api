@@ -25,6 +25,8 @@ class RestaurantAutoApproveTest extends TestCase
             'name' => 'Angkor Bites',
             'category_id' => $category->id,
             'profile_picture' => UploadedFile::fake()->image('logo.jpg'),
+            // Sent as a form field, like the app does.
+            'is_halal' => '1',
         ], [
             'Authorization' => 'Bearer '.JWTAuth::fromUser($owner),
             'Accept' => 'application/json',
@@ -38,5 +40,6 @@ class RestaurantAutoApproveTest extends TestCase
         // Nobody approved it by hand.
         $this->assertNull($restaurant->approved_by);
         $this->assertTrue($restaurant->isPublic());
+        $this->assertTrue($restaurant->is_halal);
     }
 }

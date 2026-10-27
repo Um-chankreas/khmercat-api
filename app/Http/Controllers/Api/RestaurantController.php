@@ -122,6 +122,7 @@ class RestaurantController extends Controller
                     'delivery_time_max' => $request->delivery_time_max,
                     'opening_time' => $request->opening_time,
                     'closing_time' => $request->closing_time,
+                    'is_halal' => $request->boolean('is_halal'),
                     // Approved straight away (no admin step); an admin can
                     // still deactivate it later. approved_by stays null:
                     // nobody approved it by hand.

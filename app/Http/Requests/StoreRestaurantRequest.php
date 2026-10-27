@@ -32,6 +32,8 @@ class StoreRestaurantRequest extends FormRequest
             'delivery_time_max' => 'nullable|integer|min:1|max:600|gte:delivery_time_min',
             'opening_time' => 'nullable|required_with:closing_time|date_format:H:i',
             'closing_time' => 'nullable|required_with:opening_time|date_format:H:i',
+            // Picked next to the cuisine category.
+            'is_halal' => 'nullable|boolean',
         ];
     }
 
